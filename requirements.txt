@@ -1,0 +1,6 @@
+flask>=3.0
+yt-dlp>=2024.1.1
+# Auto captions (speech-to-text). Agar kisi server par ye install/load na ho
+# sake to app phir bhi chalegi — sirf auto captions off rahenge,
+# .srt burn wala feature har soorat mein chalega.
+faster-whisper>=1.0

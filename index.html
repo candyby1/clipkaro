@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipKaro — Download & Upload Videos</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1220; color: #eef1ff; min-height: 100vh; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 32px 20px 60px; }
+  header { text-align: center; margin-bottom: 28px; }
+  header h1 { font-size: 34px; letter-spacing: 1px; }
+  header h1 span { color: #6c8cff; }
+  header p { color: #9aa3c7; margin-top: 8px; font-size: 15px; }
+  .tabs { display: flex; gap: 8px; justify-content: center; margin-bottom: 26px; flex-wrap: wrap; }
+  .tab { padding: 11px 20px; border-radius: 12px; border: 1px solid #2a3052; background: #171b31; color: #cfd6f5; font-size: 15px; cursor: pointer; transition: .2s; }
+  .tab.active { background: #6c8cff; border-color: #6c8cff; color: #fff; font-weight: 600; }
+  .card { background: #171b31; border: 1px solid #2a3052; border-radius: 18px; padding: 26px; }
+  .row { display: flex; gap: 10px; }
+  .row > * { flex: 1; }
+  .row > button { flex: 0 0 auto; }
+  input[type=text], input[type=password], input[type=number], input[type=file], select, textarea { width: 100%; padding: 13px 15px; border-radius: 12px; border: 1px solid #2a3052; background: #0f1220; color: #eef1ff; font-size: 15px; }
+  textarea { min-height: 70px; resize: vertical; }
+  label { display: block; margin: 14px 0 6px; color: #9aa3c7; font-size: 14px; }
+  label.check { display: flex; align-items: center; gap: 8px; cursor: pointer; color: #cfd6f5; }
+  label.check input { width: auto; }
+  button.primary { padding: 13px 26px; border: none; border-radius: 12px; background: #6c8cff; color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; transition: .2s; white-space: nowrap; }
+  button.primary:hover { background: #5878f5; }
+  button.primary:disabled { opacity: .5; cursor: not-allowed; }
+  button.ghost { padding: 9px 18px; border-radius: 10px; border: 1px solid #2a3052; background: #0f1220; color: #cfd6f5; font-size: 14px; cursor: pointer; }
+  .preview { display: none; margin-top: 20px; border-top: 1px solid #2a3052; padding-top: 20px; }
+  .preview img { width: 100%; border-radius: 12px; }
+  .preview h3 { margin: 12px 0 4px; font-size: 17px; }
+  .preview .meta { color: #9aa3c7; font-size: 13px; margin-bottom: 14px; }
+  .status { margin-top: 16px; font-size: 14px; min-height: 22px; }
+  .status.ok { color: #4ade80; } .status.err { color: #f87171; } .status.info { color: #9aa3c7; }
+  .progress { height: 8px; background: #0f1220; border-radius: 6px; margin-top: 12px; overflow: hidden; display: none; }
+  .progress div { height: 100%; width: 0%; background: #6c8cff; transition: width .3s; }
+  .hidden { display: none !important; }
+  .note { background: #0f1220; border: 1px dashed #2a3052; border-radius: 12px; padding: 14px; margin-top: 18px; font-size: 13.5px; color: #9aa3c7; line-height: 1.6; }
+  .note b { color: #cfd6f5; }
+  .platforms { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 22px; }
+  .platforms span { background: #171b31; border: 1px solid #2a3052; padding: 7px 14px; border-radius: 20px; font-size: 13px; color: #9aa3c7; }
+  footer { text-align: center; margin-top: 34px; color: #5b6390; font-size: 12.5px; }
+  .userbar { display: flex; justify-content: space-between; align-items: center; background: #171b31; border: 1px solid #2a3052; border-radius: 12px; padding: 10px 16px; margin-bottom: 20px; font-size: 14px; }
+  .grab-item { display: flex; gap: 12px; align-items: center; padding: 10px; border: 1px solid #2a3052; border-radius: 12px; margin-top: 10px; background: #0f1220; }
+  .grab-item img { width: 96px; height: 54px; object-fit: cover; border-radius: 8px; flex: 0 0 auto; background: #171b31; }
+  .grab-item .gi-title { font-size: 14px; line-height: 1.4; }
+  .grab-item .gi-meta { color: #9aa3c7; font-size: 12px; margin-top: 3px; }
+  .job-item { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid #2a3052; border-radius: 10px; margin-top: 8px; background: #0f1220; font-size: 13.5px; }
+  .job-item a { color: #6c8cff; text-decoration: none; font-weight: 600; white-space: nowrap; }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #2a3052; color: #cfd6f5; white-space: nowrap; }
+  .badge.done { background: #14532d; color: #4ade80; } .badge.error { background: #5b1a1a; color: #f87171; } .badge.downloading { background: #3b2f10; color: #fbbf24; }
+  h3.section { margin: 20px 0 4px; font-size: 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Clip<span>Karo</span></h1>
+    <p>Download videos without watermark, grab full Pages, make clips & upload to your Facebook Page</p>
+  </header>
+
+  <!-- AUTH -->
+  <div id="authCard" class="card hidden">
+    <div class="tabs" style="margin-bottom:18px">
+      <button class="tab active" id="authTabLogin" onclick="authMode('login')">Login</button>
+      <button class="tab" id="authTabSignup" onclick="authMode('signup')">Sign Up</button>
+    </div>
+    <label>Username</label>
+    <input type="text" id="authUser" placeholder="Username">
+    <label>Password</label>
+    <input type="password" id="authPass" placeholder="Password (kam az kam 6 characters)">
+    <div class="row" style="margin-top:18px">
+      <button class="primary" id="authBtn" onclick="doAuth()" style="width:100%">Login</button>
+    </div>
+    <div class="status" id="authStatus"></div>
+    <div class="note">🔒 Password <b>hash</b> ho kar save hota hai — plain text kabhi save nahi hota. Login ke baad hi Download, Grabber, Clipper aur Subtitles chalenge. Har user ko sirf apni hi jobs/history dikhti hai.</div>
+  </div>
+
+  <div id="userBar" class="userbar hidden">
+    <span>👤 Logged in: <b id="meName"></b></span>
+    <button class="ghost" onclick="doLogout()">Logout</button>
+  </div>
+
+  <!-- MAIN (login ke baad) -->
+  <div id="mainArea" class="hidden">
+    <div class="tabs">
+      <button class="tab active" data-tab="download" onclick="showTab('download', this)">📥 Download</button>
+      <button class="tab" data-tab="grab" onclick="showTab('grab', this)">🔗 Link Grabber</button>
+      <button class="tab" data-tab="clip" onclick="showTab('clip', this)">✂️ Clipper</button>
+      <button class="tab" data-tab="subs" onclick="showTab('subs', this)">💬 Subtitles</button>
+      <button class="tab" data-tab="upload" onclick="showTab('upload', this)">📤 Upload</button>
+      <button class="tab" data-tab="jobs" onclick="showTab('jobs', this)">🗂 My Jobs</button>
+    </div>
+
+    <!-- DOWNLOAD TAB -->
+    <div id="tab-download" class="card">
+      <div class="row">
+        <input type="text" id="url" placeholder="Paste video link here (Facebook, YouTube, TikTok, Instagram…)">
+        <button class="primary" id="fetchBtn" onclick="fetchInfo()">Get</button>
+      </div>
+      <label class="check"><input type="checkbox" id="dlUseCookies"> Facebook login cookies use karo (private/page videos ke liye — pehle Grabber tab mein cookies upload karo)</label>
+      <div class="status" id="dlStatus"></div>
+      <div class="preview" id="preview">
+        <img id="thumb" alt="thumbnail">
+        <h3 id="vtitle"></h3>
+        <div class="meta" id="vmeta"></div>
+        <label>Quality</label>
+        <select id="quality"></select>
+        <div class="row" style="margin-top:14px">
+          <button class="primary" id="dlBtn" onclick="startDownload()" style="width:100%">⬇ Download Video</button>
+        </div>
+        <div class="progress" id="dlProgress"><div></div></div>
+      </div>
+      <div class="note">✅ <b>No watermark</b> — original file jaisi hai waisi milegi &nbsp;•&nbsp; ✅ <b>Best quality</b> — hamesha sab se achi available quality (4K tabhi likha jayega jab asal video 2160p ya zyada ho) &nbsp;•&nbsp; ⚠️ Doosron ki videos re-upload karne se pehle unki ijazat lein.</div>
+    </div>
+
+    <!-- GRABBER TAB -->
+    <div id="tab-grab" class="card hidden">
+      <p style="color:#9aa3c7;font-size:15px">Facebook Page / profile ya YouTube playlist / channel ka link do — uski saari videos ki list aa jayegi. Phir chun kar aik sath bulk download karo.</p>
+      <label>Page / Playlist link</label>
+      <div class="row">
+        <input type="text" id="grabUrl" placeholder="https://www.facebook.com/YourPage/videos …">
+        <button class="primary" id="grabBtn" onclick="doGrab()">Grab Links</button>
+      </div>
+      <label class="check"><input type="checkbox" id="grabUseCookies" checked> Facebook login cookies use karo (agar upload ki hui hain)</label>
+      <div class="status" id="grabStatus"></div>
+      <div id="grabResults"></div>
+      <div class="row hidden" id="grabActions" style="margin-top:16px">
+        <button class="ghost" onclick="grabSelectAll(true)">Select All</button>
+        <button class="ghost" onclick="grabSelectAll(false)">Select None</button>
+        <button class="primary" id="bulkBtn" onclick="startBulk()">⬇ Download Selected</button>
+      </div>
+      <div id="bulkProgress"></div>
+      <h3 class="section">🍪 Facebook Cookies (optional)</h3>
+      <p style="color:#9aa3c7;font-size:13.5px;line-height:1.6">Facebook aksar Page ki video list ke liye login maangta hai. Apne browser se <b>cookies.txt</b> (Netscape format, "Get cookies.txt" extension se) nikaal kar yahan upload karo — file sirf hamare server par rehti hai, kahin share nahi hoti.</p>
+      <div class="row" style="margin-top:10px">
+        <input type="file" id="cookiesFile" accept=".txt">
+        <button class="ghost" onclick="uploadCookies()">Cookies Upload</button>
+      </div>
+      <div class="status" id="cookiesStatus"></div>
+    </div>
+
+    <!-- CLIPPER TAB -->
+    <div id="tab-clip" class="card hidden">
+      <p style="color:#9aa3c7;font-size:15px">Video ka apni marzi ka hissa kaat kar chhota clip banao.</p>
+      <label>Video file upload karo</label>
+      <input type="file" id="clipFile" accept="video/*">
+      <label>— ya — Bulk download ki hui file select karo</label>
+      <select id="clipJobFile"><option value="">(koi file nahi)</option></select>
+      <div class="row">
+        <div><label>Start (seconds)</label><input type="number" id="clipStart" min="0" step="0.1" value="0"></div>
+        <div><label>End (seconds)</label><input type="number" id="clipEnd" min="0" step="0.1" value="10"></div>
+      </div>
+      <div class="row" style="margin-top:16px">
+        <button class="primary" id="clipBtn" onclick="doClip()" style="width:100%">✂️ Clip Banao</button>
+      </div>
+      <div class="status" id="clipStatus"></div>
+    </div>
+
+    <!-- SUBTITLES TAB -->
+    <div id="tab-subs" class="card hidden">
+      <h3 class="section" style="margin-top:0">🤖 Auto Captions (.srt)</h3>
+      <p style="color:#9aa3c7;font-size:13.5px;line-height:1.6">Video ki awaz se khud captions banao (AI speech-to-text). <span id="capAvail"></span></p>
+      <label>Video file</label>
+      <input type="file" id="subFile" accept="video/*">
+      <div class="row" style="margin-top:14px">
+        <button class="primary" id="subBtn" onclick="doSubtitles()" style="width:100%">💬 Captions Banao (.srt)</button>
+      </div>
+      <div class="status" id="subStatus"></div>
+      <h3 class="section">🔥 Subtitles Video Par Burn Karo</h3>
+      <p style="color:#9aa3c7;font-size:13.5px;line-height:1.6">Apni .srt file video ke andar pakki (burned-in) laga do — phir captions har player mein dikhenge.</p>
+      <label>Video file</label>
+      <input type="file" id="burnVideo" accept="video/*">
+      <label>.srt file</label>
+      <input type="file" id="burnSrt" accept=".srt">
+      <div class="row" style="margin-top:14px">
+        <button class="primary" id="burnBtn" onclick="doBurn()" style="width:100%">🔥 Burn Karo</button>
+      </div>
+      <div class="status" id="burnStatus"></div>
+    </div>
+
+    <!-- UPLOAD TAB -->
+    <div id="tab-upload" class="card hidden">
+      <div id="fbSetup" class="note hidden"></div>
+      <div id="fbLoginArea">
+        <p style="color:#9aa3c7;font-size:15px;margin-bottom:14px">Apne Facebook account se login karein, Page select karein, video upload karein — seedha aapke Page par.</p>
+        <button class="primary" id="fbBtn" onclick="fbLogin()" style="width:100%">🔵 Login with Facebook</button>
+      </div>
+      <div id="fbUploadArea" class="hidden">
+        <div class="status ok" id="fbUser"></div>
+        <label>Select Page</label>
+        <select id="pageSelect"></select>
+        <label>Video file</label>
+        <input type="file" id="videoFile" accept="video/*" onchange="applyCaptionTemplate()">
+        <label>📝 Caption Template — {title} ki jagah video ka naam khud aa jayega</label>
+        <input type="text" id="capTemplate" placeholder="e.g. {title} 🔥 | Dekho aur share karo!" oninput="applyCaptionTemplate()">
+        <label>Hashtags (description ke akhir mein khud lag jayenge)</label>
+        <input type="text" id="capHashtags" placeholder="#viral #fyp #trending" oninput="applyCaptionTemplate()">
+        <label>Title</label>
+        <input type="text" id="upTitle" placeholder="Video title">
+        <label>Description</label>
+        <textarea id="upDesc" placeholder="Description (optional)"></textarea>
+        <div class="row" style="margin-top:16px">
+          <button class="primary" id="upBtn" onclick="uploadToFB()" style="width:100%">📤 Upload to Facebook Page</button>
+        </div>
+        <div class="progress" id="upProgress"><div></div></div>
+      </div>
+      <div class="status" id="upStatus"></div>
+      <div class="note">🔒 Aapka Facebook login sirf aapke browser mein rehta hai — password hamare server par kabhi nahi aata. Upload seedha Facebook ke server par hota hai.</div>
+    </div>
+
+    <!-- JOBS TAB -->
+    <div id="tab-jobs" class="card hidden">
+      <div class="row">
+        <p style="color:#9aa3c7;font-size:15px">Aapki pichli bulk download jobs — sirf aap ko dikhti hain.</p>
+        <button class="ghost" onclick="loadJobs()">🔄 Refresh</button>
+      </div>
+      <div id="jobsList"></div>
+      <div class="status" id="jobsStatus"></div>
+    </div>
+  </div>
+
+  <div class="platforms">
+    <span>Facebook</span><span>YouTube</span><span>TikTok</span><span>Instagram</span><span>X</span><span>+ 1000 more</span>
+  </div>
+  <footer>Made for creators • Download responsibly</footer>
+</div>
+
+<script>
+/* ============ CONFIG — apni Meta App ID yahan paste karo ============
+   1. developers.facebook.com -> Create App -> "Other" -> Business
+   2. App me "Facebook Login" product add karo
+   3. Settings -> Basic se App ID copy kar ke neeche paste karo
+====================================================================== */
+const CONFIG = { FB_APP_ID: "PASTE_YOUR_FACEBOOK_APP_ID_HERE" };
+
+function setStatus(id, msg, cls) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'status ' + (cls || '');
+}
+
+async function api(path, opts) {
+  const r = await fetch(path, opts || {});
+  if (r.status === 401) { showAuth(); }
+  return r;
+}
+function jsonOpts(body) { return { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) }; }
+
+/* ---------- AUTH ---------- */
+let authTab = 'login';
+function authMode(m) {
+  authTab = m;
+  document.getElementById('authTabLogin').classList.toggle('active', m === 'login');
+  document.getElementById('authTabSignup').classList.toggle('active', m === 'signup');
+  document.getElementById('authBtn').textContent = m === 'login' ? 'Login' : 'Sign Up';
+}
+function showAuth() {
+  document.getElementById('authCard').classList.remove('hidden');
+  document.getElementById('mainArea').classList.add('hidden');
+  document.getElementById('userBar').classList.add('hidden');
+}
+function showMain(username) {
+  document.getElementById('authCard').classList.add('hidden');
+  document.getElementById('mainArea').classList.remove('hidden');
+  document.getElementById('userBar').classList.remove('hidden');
+  document.getElementById('meName').textContent = username;
+  checkCookies(); checkCaptions(); loadJobs(); refreshClipFiles();
+}
+async function doAuth() {
+  const username = document.getElementById('authUser').value.trim();
+  const password = document.getElementById('authPass').value;
+  if (!username || !password) { setStatus('authStatus', 'Username aur password dono do.', 'err'); return; }
+  const btn = document.getElementById('authBtn'); btn.disabled = true;
+  try {
+    const r = await fetch('/api/' + authTab, jsonOpts({username, password}));
+    const d = await r.json();
+    if (!d.ok) { setStatus('authStatus', d.error, 'err'); return; }
+    setStatus('authStatus', '', '');
+    showMain(d.username);
+  } catch(e) { setStatus('authStatus', 'Server se rabta nahi ho saka.', 'err'); }
+  btn.disabled = false;
+}
+async function doLogout() {
+  await fetch('/api/logout', {method: 'POST'});
+  location.reload();
+}
+async function checkSession() {
+  try {
+    const r = await fetch('/api/me');
+    const d = await r.json();
+    if (d.logged_in) showMain(d.username); else showAuth();
+  } catch(e) { showAuth(); }
+}
+
+/* ---------- TABS ---------- */
+function showTab(t, btn) {
+  document.querySelectorAll('.tab[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
+  ['download','grab','clip','subs','upload','jobs'].forEach(x =>
+    document.getElementById('tab-' + x).classList.toggle('hidden', x !== t));
+  if (t === 'jobs') loadJobs();
+  if (t === 'clip') refreshClipFiles();
+}
+
+/* ---------- DOWNLOAD ---------- */
+let currentFormats = [];
+async function fetchInfo() {
+  const url = document.getElementById('url').value.trim();
+  if (!url) { setStatus('dlStatus', 'Pehle link paste karo.', 'err'); return; }
+  setStatus('dlStatus', 'Video ki info li ja rahi hai…', 'info');
+  document.getElementById('preview').style.display = 'none';
+  try {
+    const r = await api('/api/info', jsonOpts({url, use_cookies: document.getElementById('dlUseCookies').checked}));
+    const d = await r.json();
+    if (!d.ok) { setStatus('dlStatus', d.error, 'err'); return; }
+    document.getElementById('thumb').src = d.thumbnail || '';
+    document.getElementById('vtitle').textContent = d.title || 'Video';
+    const mins = d.duration ? Math.floor(d.duration/60) + ':' + String(Math.floor(d.duration%60)).padStart(2,'0') : '';
+    document.getElementById('vmeta').textContent = (d.uploader ? d.uploader + ' • ' : '') + mins;
+    const q = document.getElementById('quality'); q.innerHTML = '';
+    currentFormats = d.formats || [];
+    if (!currentFormats.length) q.innerHTML = '<option value="best">Best quality</option>';
+    currentFormats.forEach(f => {
+      const o = document.createElement('option');
+      o.value = f.format_id;
+      const size = f.filesize ? ' (' + (f.filesize/1048576).toFixed(1) + ' MB)' : '';
+      o.textContent = f.height + 'p' + size;
+      q.appendChild(o);
+    });
+    document.getElementById('preview').style.display = 'block';
+    setStatus('dlStatus', '✅ Video mil gayi! Quality select kar ke Download dabao.', 'ok');
+  } catch(e) { setStatus('dlStatus', 'Error: server se rabta nahi ho saka.', 'err'); }
+}
+
+async function startDownload() {
+  const url = document.getElementById('url').value.trim();
+  const format_id = document.getElementById('quality').value || 'best';
+  const btn = document.getElementById('dlBtn');
+  btn.disabled = true;
+  setStatus('dlStatus', '⬇ Download ho raha hai, thoda intezar karo…', 'info');
+  const bar = document.getElementById('dlProgress');
+  bar.style.display = 'block'; bar.firstElementChild.style.width = '40%';
+  try {
+    const r = await api('/api/download', jsonOpts({url, format_id, use_cookies: document.getElementById('dlUseCookies').checked}));
+    bar.firstElementChild.style.width = '80%';
+    if (!r.ok) { const d = await r.json().catch(()=>({})); throw new Error(d.error || 'Download fail ho gaya'); }
+    const blob = await r.blob();
+    let name = 'video.mp4';
+    const cd = r.headers.get('Content-Disposition');
+    if (cd) { const m = cd.match(/filename="(.+)"/); if (m) name = m[1]; }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    bar.firstElementChild.style.width = '100%';
+    const q = r.headers.get('X-Video-Quality'), h = r.headers.get('X-Video-Height');
+    setStatus('dlStatus', '✅ Download complete!' + (q ? ' Asal quality: ' + q + (h ? ' (' + h + 'p)' : '') : ''), 'ok');
+  } catch(e) { setStatus('dlStatus', '❌ ' + e.message, 'err'); }
+  btn.disabled = false;
+  setTimeout(() => bar.style.display = 'none', 1500);
+}
+
+/* ---------- COOKIES ---------- */
+async function checkCookies() {
+  try {
+    const r = await fetch('/api/cookies/status'); const d = await r.json();
+    if (d.has_cookies) setStatus('cookiesStatus', '✅ Cookies pehle se save hain — Grab/Download mein use ho sakti hain.', 'ok');
+  } catch(e) {}
+}
+async function uploadCookies() {
+  const f = document.getElementById('cookiesFile').files[0];
+  if (!f) { setStatus('cookiesStatus', 'Pehle cookies.txt file select karo.', 'err'); return; }
+  const fd = new FormData(); fd.append('cookies', f);
+  try {
+    const r = await api('/api/cookies', { method: 'POST', body: fd });
+    const d = await r.json();
+    setStatus('cookiesStatus', d.ok ? '✅ ' + d.message : '❌ ' + d.error, d.ok ? 'ok' : 'err');
+  } catch(e) { setStatus('cookiesStatus', '❌ Server se rabta nahi ho saka.', 'err'); }
+}
+
+/* ---------- LINK GRABBER + BULK ---------- */
+let grabEntries = [];
+function fmtDur(s) { if (!s) return ''; return Math.floor(s/60) + ':' + String(Math.floor(s%60)).padStart(2,'0'); }
+async function doGrab() {
+  const url = document.getElementById('grabUrl').value.trim();
+  if (!url) { setStatus('grabStatus', 'Pehle Page/playlist ka link paste karo.', 'err'); return; }
+  const btn = document.getElementById('grabBtn'); btn.disabled = true;
+  setStatus('grabStatus', '🔎 Videos ki list li ja rahi hai… bari Page par waqt lag sakta hai.', 'info');
+  document.getElementById('grabResults').innerHTML = '';
+  document.getElementById('grabActions').classList.add('hidden');
+  try {
+    const r = await api('/api/grab', jsonOpts({url, use_cookies: document.getElementById('grabUseCookies').checked}));
+    const d = await r.json();
+    if (!d.ok) { setStatus('grabStatus', '❌ ' + d.error, 'err'); return; }
+    grabEntries = d.entries || [];
+    const box = document.getElementById('grabResults');
+    box.innerHTML = '';
+    grabEntries.forEach((e, i) => {
+      const div = document.createElement('div');
+      div.className = 'grab-item';
+      div.innerHTML = '<input type="checkbox" class="grab-check" data-i="' + i + '" checked style="width:20px;height:20px;flex:0 0 auto">' +
+        (e.thumbnail ? '<img src="' + e.thumbnail + '" alt="">' : '<img alt="">') +
+        '<div><div class="gi-title"></div><div class="gi-meta">' + fmtDur(e.duration) + '</div></div>';
+      div.querySelector('.gi-title').textContent = e.title;
+      box.appendChild(div);
+    });
+    document.getElementById('grabActions').classList.remove('hidden');
+    setStatus('grabStatus', '✅ ' + d.count + ' videos mil gayi' + (d.title ? ' — ' + d.title : '') + '. Jo chahiye select kar ke Download dabao.', 'ok');
+  } catch(e) { setStatus('grabStatus', '❌ Server se rabta nahi ho saka.', 'err'); }
+  btn.disabled = false;
+}
+function grabSelectAll(v) { document.querySelectorAll('.grab-check').forEach(c => c.checked = v); }
+
+async function startBulk() {
+  const urls = [];
+  document.querySelectorAll('.grab-check:checked').forEach(c => urls.push(grabEntries[+c.dataset.i].url));
+  if (!urls.length) { setStatus('grabStatus', 'Koi video select nahi hui.', 'err'); return; }
+  const btn = document.getElementById('bulkBtn'); btn.disabled = true;
+  setStatus('grabStatus', '⬇ Bulk download shuru ho gaya…', 'info');
+  try {
+    const r = await api('/api/bulk-download', jsonOpts({urls, use_cookies: document.getElementById('grabUseCookies').checked}));
+    const d = await r.json();
+    if (!d.ok) { setStatus('grabStatus', '❌ ' + d.error, 'err'); btn.disabled = false; return; }
+    pollJob(d.job_id, btn);
+  } catch(e) { setStatus('grabStatus', '❌ Server se rabta nahi ho saka.', 'err'); btn.disabled = false; }
+}
+
+function renderJobItems(el, job) {
+  el.innerHTML = '';
+  (job.items || []).forEach(it => {
+    const div = document.createElement('div');
+    div.className = 'job-item';
+    let right = '<span class="badge ' + it.status + '">' + it.status + (it.status === 'downloading' ? ' ' + (it.progress || 0) + '%' : '') + '</span>';
+    if (it.status === 'done' && it.download_url) right = '<span class="badge done">' + (it.quality || 'done') + '</span> <a href="' + it.download_url + '">⬇ Download</a>';
+    if (it.status === 'error') right = '<span class="badge error">error</span>';
+    div.innerHTML = '<span class="ji-title"></span>' + right;
+    div.querySelector('.ji-title').textContent = (it.title || it.url || 'Video') + (it.error ? ' — ' + it.error : '');
+    el.appendChild(div);
+  });
+}
+async function pollJob(jobId, btn) {
+  const box = document.getElementById('bulkProgress');
+  box.innerHTML = '<div class="status info">Job chal raha hai…</div><div id="bulkItems"></div>';
+  const itemsEl = document.getElementById('bulkItems');
+  const timer = setInterval(async () => {
+    try {
+      const r = await fetch('/api/job/' + jobId);
+      const d = await r.json();
+      if (!d.ok) { clearInterval(timer); return; }
+      renderJobItems(itemsEl, d);
+      box.firstElementChild.textContent = 'Progress: ' + (d.done || 0) + ' / ' + (d.total || 0) + ' videos';
+      if (d.status === 'finished') {
+        clearInterval(timer);
+        box.firstElementChild.textContent = '✅ Bulk download mukammal: ' + d.done + ' / ' + d.total;
+        box.firstElementChild.className = 'status ok';
+        if (btn) btn.disabled = false;
+        loadJobs(); refreshClipFiles();
+      }
+    } catch(e) {}
+  }, 2000);
+}
+
+/* ---------- MY JOBS ---------- */
+async function loadJobs() {
+  try {
+    const r = await fetch('/api/jobs');
+    const d = await r.json();
+    const box = document.getElementById('jobsList');
+    if (!d.ok || !d.jobs.length) { box.innerHTML = '<p style="color:#9aa3c7;font-size:14px;margin-top:12px">Abhi koi job nahi. Grabber se bulk download karo to yahan aayegi.</p>'; return; }
+    box.innerHTML = '';
+    d.jobs.forEach(j => {
+      const head = document.createElement('h3');
+      head.className = 'section';
+      head.textContent = '📦 ' + j.type + ' — ' + j.status + ' (' + j.done + '/' + j.total + ') • ' + (j.created_at || '');
+      box.appendChild(head);
+      const wrap = document.createElement('div');
+      renderJobItems(wrap, j);
+      box.appendChild(wrap);
+    });
+  } catch(e) {}
+}
+
+/* ---------- CLIPPER ---------- */
+async function refreshClipFiles() {
+  try {
+    const r = await fetch('/api/jobs');
+    const d = await r.json();
+    const sel = document.getElementById('clipJobFile');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">(koi file nahi)</option>';
+    (d.jobs || []).forEach(j => (j.items || []).forEach(it => {
+      if (it.status === 'done' && it.file) {
+        const o = document.createElement('option');
+        o.value = j.id + '|' + it.file;
+        o.textContent = (it.title || it.file) + (it.quality ? ' (' + it.quality + ')' : '');
+        sel.appendChild(o);
+      }
+    }));
+    sel.value = cur;
+  } catch(e) {}
+}
+async function doClip() {
+  const fd = new FormData();
+  const f = document.getElementById('clipFile').files[0];
+  const sel = document.getElementById('clipJobFile').value;
+  if (f) fd.append('video', f);
+  else if (sel) { const p = sel.split('|'); fd.append('job_id', p[0]); fd.append('filename', p[1]); }
+  else { setStatus('clipStatus', 'Video file upload karo ya downloaded file select karo.', 'err'); return; }
+  fd.append('start', document.getElementById('clipStart').value || '0');
+  fd.append('end', document.getElementById('clipEnd').value || '0');
+  const btn = document.getElementById('clipBtn'); btn.disabled = true;
+  setStatus('clipStatus', '✂️ Clip ban raha hai…', 'info');
+  try {
+    const r = await api('/api/clip', { method: 'POST', body: fd });
+    if (!r.ok) { const d = await r.json().catch(()=>({})); throw new Error(d.error || 'Clip fail ho gaya'); }
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'clip.mp4'; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    setStatus('clipStatus', '✅ Clip tayyar — download ho gaya!', 'ok');
+  } catch(e) { setStatus('clipStatus', '❌ ' + e.message, 'err'); }
+  btn.disabled = false;
+}
+
+/* ---------- SUBTITLES ---------- */
+async function checkCaptions() {
+  try {
+    const r = await fetch('/api/captions-status'); const d = await r.json();
+    document.getElementById('capAvail').textContent = d.auto_captions ? '✅ Is server par available hai.' : '⚠️ Is server par auto captions available nahi — neeche Burn wala option use karo.';
+    document.getElementById('subBtn').disabled = !d.auto_captions;
+  } catch(e) {}
+}
+async function doSubtitles() {
+  const f = document.getElementById('subFile').files[0];
+  if (!f) { setStatus('subStatus', 'Pehle video file select karo.', 'err'); return; }
+  const fd = new FormData(); fd.append('video', f);
+  const btn = document.getElementById('subBtn'); btn.disabled = true;
+  setStatus('subStatus', '💬 Captions ban rahe hain… bari video mein waqt lagega.', 'info');
+  try {
+    const r = await api('/api/subtitles', { method: 'POST', body: fd });
+    if (!r.ok) { const d = await r.json().catch(()=>({})); throw new Error(d.error || 'Captions fail ho gaye'); }
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'captions.srt'; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    setStatus('subStatus', '✅ Captions tayyar — captions.srt download ho gayi!', 'ok');
+  } catch(e) { setStatus('subStatus', '❌ ' + e.message, 'err'); }
+  btn.disabled = false;
+}
+async function doBurn() {
+  const v = document.getElementById('burnVideo').files[0];
+  const s = document.getElementById('burnSrt').files[0];
+  if (!v || !s) { setStatus('burnStatus', 'Video aur .srt dono files select karo.', 'err'); return; }
+  const fd = new FormData(); fd.append('video', v); fd.append('srt', s);
+  const btn = document.getElementById('burnBtn'); btn.disabled = true;
+  setStatus('burnStatus', '🔥 Subtitles burn ho rahe hain…', 'info');
+  try {
+    const r = await api('/api/burn-subtitles', { method: 'POST', body: fd });
+    if (!r.ok) { const d = await r.json().catch(()=>({})); throw new Error(d.error || 'Burn fail ho gaya'); }
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'video-with-subtitles.mp4'; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    setStatus('burnStatus', '✅ Ho gaya — subtitled video download ho gayi!', 'ok');
+  } catch(e) { setStatus('burnStatus', '❌ ' + e.message, 'err'); }
+  btn.disabled = false;
+}
+
+/* ---------- UPLOAD (Facebook Login + Graph API, sab browser mein) ---------- */
+function applyCaptionTemplate() {
+  const tpl = document.getElementById('capTemplate').value;
+  const tags = document.getElementById('capHashtags').value.trim();
+  const file = document.getElementById('videoFile').files[0];
+  if (!tpl && !tags) return;
+  const rawTitle = file ? file.name.replace(/\.[^.]+$/, '') : (document.getElementById('upTitle').value || '');
+  if (tpl) document.getElementById('upTitle').value = tpl.replace('{title}', rawTitle);
+  if (tags) {
+    const desc = document.getElementById('upDesc');
+    const base = desc.value.replace(/\n*#[^\n]*$/, '').trim();
+    desc.value = (base ? base + '\n\n' : '') + tags;
+  }
+}
+let pageToken = '', pageId = '';
+window.fbAsyncInit = function() {
+  if (!CONFIG.FB_APP_ID || CONFIG.FB_APP_ID.includes('PASTE_YOUR')) {
+    const s = document.getElementById('fbSetup');
+    s.classList.remove('hidden');
+    s.innerHTML = '⚙️ <b>Setup zaroori hai:</b> Upload tab chalane ke liye <b>developers.facebook.com</b> par aik free App banao, uski <b>App ID</b> is file mein <b>CONFIG.FB_APP_ID</b> mein paste karo. Mukammal tareeqa README mein hai.';
+    document.getElementById('fbBtn').disabled = true;
+    return;
+  }
+  FB.init({ appId: CONFIG.FB_APP_ID, cookie: true, xfbml: false, version: 'v21.0' });
+};
+(function(d, s, id){ var js, fjs = d.getElementsByTagName(s)[0];
+  if (d.getElementById(id)) return; js = d.createElement(s); js.id = id;
+  js.src = "https://connect.facebook.net/en_US/sdk.js";
+  fjs.parentNode.insertBefore(js, fjs); }(document, 'script', 'facebook-jssdk'));
+
+function fbLogin() {
+  FB.login(function(resp) {
+    if (!resp.authResponse) { setStatus('upStatus', 'Login cancel ho gaya.', 'err'); return; }
+    FB.api('/me', {fields: 'name'}, function(me) {
+      document.getElementById('fbUser').textContent = '✅ Logged in: ' + me.name;
+    });
+    FB.api('/me/accounts', function(r) {
+      const sel = document.getElementById('pageSelect'); sel.innerHTML = '';
+      (r.data || []).forEach(p => {
+        const o = document.createElement('option');
+        o.value = p.id + '|' + p.access_token;
+        o.textContent = p.name;
+        sel.appendChild(o);
+      });
+      if (!r.data || !r.data.length) { setStatus('upStatus', 'Koi Facebook Page nahi mila. Pehle aik Page banao.', 'err'); return; }
+      document.getElementById('fbLoginArea').classList.add('hidden');
+      document.getElementById('fbUploadArea').classList.remove('hidden');
+      setStatus('upStatus', 'Page select karo aur video upload karo.', 'info');
+    });
+  }, {scope: 'pages_manage_posts,pages_read_engagement'});
+}
+
+function uploadToFB() {
+  const sel = document.getElementById('pageSelect').value;
+  const file = document.getElementById('videoFile').files[0];
+  if (!file) { setStatus('upStatus', 'Pehle video file select karo.', 'err'); return; }
+  const parts = sel.split('|'); pageId = parts[0]; pageToken = parts[1];
+  const btn = document.getElementById('upBtn'); btn.disabled = true;
+  setStatus('upStatus', '📤 Upload ho raha hai… (bari file mein waqt lag sakta hai)', 'info');
+  const bar = document.getElementById('upProgress');
+  bar.style.display = 'block'; bar.firstElementChild.style.width = '30%';
+
+  const fd = new FormData();
+  fd.append('access_token', pageToken);
+  fd.append('title', document.getElementById('upTitle').value || file.name);
+  fd.append('description', document.getElementById('upDesc').value || '');
+  fd.append('file', file);
+
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', 'https://graph.facebook.com/v21.0/' + pageId + '/videos');
+  xhr.upload.onprogress = function(e) {
+    if (e.lengthComputable) bar.firstElementChild.style.width = Math.round(e.loaded/e.total*100) + '%';
+  };
+  xhr.onload = function() {
+    btn.disabled = false;
+    try {
+      const d = JSON.parse(xhr.responseText);
+      if (d.id) { setStatus('upStatus', '✅ Upload ho gaya! Video ID: ' + d.id + ' — Page par processing mein hai.', 'ok'); }
+      else { setStatus('upStatus', '❌ ' + (d.error ? d.error.message : 'Upload fail'), 'err'); }
+    } catch(e) { setStatus('upStatus', '❌ Jawab samajh nahi aaya.', 'err'); }
+    setTimeout(() => bar.style.display = 'none', 1500);
+  };
+  xhr.onerror = function() { btn.disabled = false; setStatus('upStatus', '❌ Network error.', 'err'); };
+  xhr.send(fd);
+}
+
+checkSession();
+</script>
+</body>
+</html>
