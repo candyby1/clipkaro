@@ -198,6 +198,23 @@ def logout():
     return jsonify({"ok": True})
 
 
+@app.route("/api/change-password", methods=["POST"])
+@login_required
+def change_password():
+    data = request.get_json(force=True, silent=True) or {}
+    old = data.get("old_password") or ""
+    new = data.get("new_password") or ""
+    if len(new) < 6:
+        return jsonify({"ok": False, "error": "Naya password kam az kam 6 characters ka ho."}), 400
+    row = db().execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not row or not check_password_hash(row["pass_hash"], old):
+        return jsonify({"ok": False, "error": "Purana password ghalat hai."}), 401
+    db().execute("UPDATE users SET pass_hash = ? WHERE id = ?",
+                 (generate_password_hash(new), session["user_id"]))
+    db().commit()
+    return jsonify({"ok": True})
+
+
 @app.route("/api/me")
 def me():
     user = current_user()

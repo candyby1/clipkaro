@@ -91,7 +91,23 @@
 
   <div id="userBar" class="userbar hidden">
     <span>👤 Logged in: <b id="meName"></b></span>
-    <button class="ghost" onclick="doLogout()">Logout</button>
+    <span>
+      <button class="ghost" onclick="togglePwCard()">🔑 Password Change</button>
+      <button class="ghost" onclick="doLogout()">Logout</button>
+    </span>
+  </div>
+
+  <div id="pwCard" class="card hidden" style="margin-bottom:20px">
+    <label>Purana Password</label>
+    <input type="password" id="pwOld" placeholder="Purana password">
+    <label>Naya Password</label>
+    <input type="password" id="pwNew" placeholder="Naya password (kam az kam 6 characters)">
+    <label>Naya Password Dobara</label>
+    <input type="password" id="pwNew2" placeholder="Naya password dobara likhein">
+    <div class="row" style="margin-top:16px">
+      <button class="primary" onclick="doChangePassword()">Password Badlein</button>
+    </div>
+    <div class="status" id="pwStatus"></div>
   </div>
 
   <!-- MAIN (login ke baad) -->
@@ -482,6 +498,26 @@ async function doAuth() {
 async function doLogout() {
   await fetch('/api/logout', {method: 'POST'});
   location.reload();
+}
+function togglePwCard() {
+  document.getElementById('pwCard').classList.toggle('hidden');
+}
+async function doChangePassword() {
+  const oldP = document.getElementById('pwOld').value;
+  const newP = document.getElementById('pwNew').value;
+  const newP2 = document.getElementById('pwNew2').value;
+  const st = document.getElementById('pwStatus');
+  if (newP !== newP2) { st.className = 'status err'; st.textContent = 'Naya password dono jagah aik jaisa likhein.'; return; }
+  st.className = 'status info'; st.textContent = 'Password change ho raha hai…';
+  try {
+    const r = await fetch('/api/change-password', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({old_password: oldP, new_password: newP})});
+    const d = await r.json();
+    if (d.ok) {
+      st.className = 'status ok'; st.textContent = '✅ Password change ho gaya. Agli dafa naye password se login karein.';
+      document.getElementById('pwOld').value = ''; document.getElementById('pwNew').value = ''; document.getElementById('pwNew2').value = '';
+    } else { st.className = 'status err'; st.textContent = '❌ ' + (d.error || 'Password change nahi hua.'); }
+  } catch(e) { st.className = 'status err'; st.textContent = '❌ Network error.'; }
 }
 async function checkSession() {
   try {
