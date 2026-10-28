@@ -4,3 +4,7 @@ yt-dlp>=2024.1.1
 # sake to app phir bhi chalegi — sirf auto captions off rahenge,
 # .srt burn wala feature har soorat mein chalega.
 faster-whisper>=1.0
+# AI Voiceover (text-to-speech). edge-tts = Microsoft ki online awazein
+# (primary); gTTS = fallback jab edge-tts kisi network par na chale.
+edge-tts>=7.0
+gTTS>=2.5

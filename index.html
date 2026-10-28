@@ -86,7 +86,7 @@
       <button class="primary" id="authBtn" onclick="doAuth()" style="width:100%">Login</button>
     </div>
     <div class="status" id="authStatus"></div>
-    <div class="note">🔒 Password <b>hash</b> ho kar save hota hai — plain text kabhi save nahi hota. Login ke baad hi Download, Grabber, Profiles, Clipper & Effects, Auto Clips, Subtitles aur Dashboard chalenge. Har user ko sirf apni hi jobs/history dikhti hai.</div>
+    <div class="note">🔒 Password <b>hash</b> ho kar save hota hai — plain text kabhi save nahi hota. Login ke baad hi Download, Grabber, Profiles, Clipper & Effects, Auto Clips, Subtitles, Voiceover, Editor Tools aur Dashboard chalenge. Har user ko sirf apni hi jobs/history dikhti hai.</div>
   </div>
 
   <div id="userBar" class="userbar hidden">
@@ -121,6 +121,8 @@
       <button class="tab" data-tab="jobs" onclick="showTab('jobs', this)">🗂 My Jobs</button>
       <button class="tab" data-tab="profiles" onclick="showTab('profiles', this)">👤 Profiles</button>
       <button class="tab" data-tab="dash" onclick="showTab('dash', this)">📊 Dashboard</button>
+      <button class="tab" data-tab="voice" onclick="showTab('voice', this)">🎙 Voiceover</button>
+      <button class="tab" data-tab="editor" onclick="showTab('editor', this)">🎬 Editor Tools</button>
     </div>
 
     <!-- DOWNLOAD TAB -->
@@ -142,6 +144,7 @@
           <option value="original">Original</option>
           <option value="vertical">Vertical 9:16 (Reels / Shorts)</option>
           <option value="horizontal">Horizontal 16:9</option>
+          <option value="square">Square 1:1 (1080×1080)</option>
         </select>
         <label>Sirf pehle itne seconds (khali = poori video)</label>
         <input type="number" id="dlSecs" min="1" step="1" placeholder="e.g. 30">
@@ -178,6 +181,7 @@
             <option value="original">Original</option>
             <option value="vertical">Vertical 9:16</option>
             <option value="horizontal">Horizontal 16:9</option>
+            <option value="square">Square 1:1</option>
           </select></div>
         <div><label>Sirf pehle seconds</label><input type="number" id="bulkSecs" min="1" step="1" placeholder="khali = poori"></div>
         <div><label>Ek saath downloads</label>
@@ -242,6 +246,21 @@
       <label class="check"><input type="checkbox" id="fxCropOn"> Crop karo (center se)</label>
       <label>Har side se crop %</label>
       <input type="number" id="fxCropPct" min="1" max="45" value="10">
+      <div class="row">
+        <div><label>Filter Preset</label>
+          <select id="fxPreset">
+            <option value="none">None</option><option value="warm">🌅 Warm</option>
+            <option value="cool">❄️ Cool</option><option value="mono">⚫ Mono (B/W)</option>
+            <option value="vintage">📼 Vintage</option><option value="vibrant">🌈 Vibrant</option>
+          </select></div>
+        <div><label>Speed</label>
+          <select id="fxSpeed">
+            <option value="0.5">0.5x (slow)</option><option value="0.75">0.75x</option>
+            <option value="1" selected>1x (normal)</option><option value="1.25">1.25x</option>
+            <option value="1.5">1.5x</option><option value="2">2x (fast)</option>
+          </select></div>
+      </div>
+      <label class="check"><input type="checkbox" id="fxReverse"> ⏪ Reverse karo (video + awaz ulti — sirf 60 seconds tak ki video)</label>
       <div class="row" style="margin-top:16px">
         <button class="primary" id="fxBtn" onclick="doEffects()" style="width:100%">🎨 Effects Lagao</button>
       </div>
@@ -309,6 +328,7 @@
       <p style="color:#9aa3c7;font-size:13.5px;line-height:1.6">Video ki awaz se khud captions banao (AI speech-to-text). <span id="capAvail"></span></p>
       <label>Video file</label>
       <input type="file" id="subFile" accept="video/*">
+      <label class="check"><input type="checkbox" id="subTranslate"> 🌐 Captions English mein translate karo (jo bhi zuban ho, .srt English mein banegi — phir neeche Burn se video par bhi laga sakte ho)</label>
       <div class="row" style="margin-top:14px">
         <button class="primary" id="subBtn" onclick="doSubtitles()" style="width:100%">💬 Captions Banao (.srt)</button>
       </div>
@@ -428,12 +448,197 @@
       <div id="dashSources"></div>
       <div class="status" id="dashStatus"></div>
     </div>
+
+    <!-- VOICEOVER TAB -->
+    <div id="tab-voice" class="card hidden">
+      <h3 class="section" style="margin-top:0">🎙 AI Voiceover — Text se Awaz</h3>
+      <p style="color:#9aa3c7;font-size:13.5px;line-height:1.6">Text likho, awaz chuno — MP3 voiceover tayyar. Urdu, Hindi aur English awazein (Microsoft Edge online awazein; agar kisi network par wo na chalein to Google ki awaz khud lag jati hai).</p>
+      <label>Text (jo bolna hai)</label>
+      <textarea id="voText" placeholder="e.g. Assalam-o-Alaikum! Is video mein hum aap ko batayenge ke…"></textarea>
+      <label>Awaz (Voice)</label>
+      <select id="voVoice">
+        <option value="ur-PK-UzmaNeural">🇵🇰 Urdu — Uzma (Female)</option>
+        <option value="ur-PK-AsadNeural">🇵🇰 Urdu — Asad (Male)</option>
+        <option value="hi-IN-SwaraNeural">🇮🇳 Hindi — Swara (Female)</option>
+        <option value="hi-IN-MadhurNeural">🇮🇳 Hindi — Madhur (Male)</option>
+        <option value="en-US-AriaNeural">🇺🇸 English US — Aria (Female)</option>
+        <option value="en-US-GuyNeural">🇺🇸 English US — Guy (Male)</option>
+        <option value="en-GB-SoniaNeural">🇬🇧 English UK — Sonia (Female)</option>
+        <option value="en-IN-NeerjaNeural">🇮🇳 English IN — Neerja (Female)</option>
+      </select>
+      <div class="row" style="margin-top:14px">
+        <button class="primary" id="voBtn" onclick="doVoiceover()" style="width:100%">🎙 Voiceover Banao (MP3)</button>
+      </div>
+      <div class="status" id="voStatus"></div>
+
+      <h3 class="section">🔊 Voiceover Video Par Lagao</h3>
+      <p style="color:#9aa3c7;font-size:13.5px;line-height:1.6">Tayyar voiceover (ya koi bhi MP3) kisi video par lagao — asal awaz ki jagah, ya asal awaz ke sath mix karke.</p>
+      <label>Video file upload karo</label>
+      <input type="file" id="voaFile" accept="video/*">
+      <label>— ya — Downloaded file select karo</label>
+      <select id="voaJobFile" class="jobfile-sel"><option value="">(koi file nahi)</option></select>
+      <label>Audio file upload karo (MP3/WAV)</label>
+      <input type="file" id="voaAudioFile" accept="audio/*">
+      <label>— ya — Voiceover job ki file select karo</label>
+      <select id="voaAudioJob" class="jobfile-sel"><option value="">(koi file nahi)</option></select>
+      <div class="row">
+        <div><label>Mode</label>
+          <select id="voaMode">
+            <option value="replace">Replace — asal awaz khatam, sirf voiceover</option>
+            <option value="mix">Mix — voiceover + halki asal awaz</option>
+          </select></div>
+        <div><label>Mix mein asal awaz ki volume (0–1)</label><input type="number" id="voaBgVol" min="0" max="1" step="0.05" value="0.3"></div>
+      </div>
+      <div class="row" style="margin-top:14px">
+        <button class="primary" id="voaBtn" onclick="doVoiceoverAdd()" style="width:100%">🔊 Voiceover Lagao</button>
+      </div>
+      <div class="status" id="voaStatus"></div>
+    </div>
+
+    <!-- EDITOR TOOLS TAB -->
+    <div id="tab-editor" class="card hidden">
+      <h3 class="section" style="margin-top:0">🔀 Transitions — Do Videos Joro</h3>
+      <p style="color:#9aa3c7;font-size:13.5px;line-height:1.6">Do videos ko aik bana do — darmiyan mein fade/wipe jaisi transition ke sath, ya seedha join.</p>
+      <label>Pehli video upload karo</label>
+      <input type="file" id="trFile1" accept="video/*">
+      <label>— ya — Downloaded file select karo</label>
+      <select id="trJobFile1" class="jobfile-sel"><option value="">(koi file nahi)</option></select>
+      <label>Doosri video upload karo</label>
+      <input type="file" id="trFile2" accept="video/*">
+      <label>— ya — Downloaded file select karo</label>
+      <select id="trJobFile2" class="jobfile-sel"><option value="">(koi file nahi)</option></select>
+      <div class="row">
+        <div><label>Transition</label>
+          <select id="trName">
+            <option value="fade">Fade</option><option value="fadeblack">Fade (Black se)</option>
+            <option value="wipeleft">Wipe Left</option><option value="slideright">Slide Right</option>
+            <option value="circleopen">Circle Open</option><option value="dissolve">Dissolve</option>
+            <option value="none">None — seedha join</option>
+          </select></div>
+        <div><label>Transition duration</label>
+          <select id="trDur"><option value="0.5">0.5 sec</option><option value="1" selected>1 sec</option><option value="2">2 sec</option></select></div>
+      </div>
+      <div class="row" style="margin-top:14px">
+        <button class="primary" id="trBtn" onclick="doTransition()" style="width:100%">🔀 Videos Joro</button>
+      </div>
+      <div class="status" id="trStatus"></div>
+
+      <h3 class="section">🔤 Title Text</h3>
+      <p style="color:#9aa3c7;font-size:13.5px;line-height:1.6">Video par tay waqt ke liye bara title text lagao — peeche box ke sath ya baghair.</p>
+      <label>Video file upload karo</label>
+      <input type="file" id="ttFile" accept="video/*">
+      <label>— ya — Downloaded file select karo</label>
+      <select id="ttJobFile" class="jobfile-sel"><option value="">(koi file nahi)</option></select>
+      <label>Title text</label>
+      <input type="text" id="ttText" placeholder="e.g. Meri Nayi Video">
+      <div class="row">
+        <div><label>Shuru (seconds)</label><input type="number" id="ttStart" min="0" step="0.5" value="0"></div>
+        <div><label>Khatam (seconds)</label><input type="number" id="ttEnd" min="0" step="0.5" value="3"></div>
+        <div><label>Size</label><input type="number" id="ttSize" min="16" max="160" value="48"></div>
+      </div>
+      <div class="row">
+        <div><label>Position</label>
+          <select id="ttPos"><option value="top">Upar Center</option><option value="center">Bilkul Center</option><option value="bottom">Neeche Center</option></select></div>
+        <div><label>Text color</label><input type="color" id="ttColor" value="#ffffff"></div>
+        <div><label>Box color</label><input type="color" id="ttBoxColor" value="#000000"></div>
+      </div>
+      <label class="check"><input type="checkbox" id="ttBox" checked> Text ke peeche box lagao</label>
+      <div class="row" style="margin-top:14px">
+        <button class="primary" id="ttBtn" onclick="doTitle()" style="width:100%">🔤 Title Lagao</button>
+      </div>
+      <div class="status" id="ttStatus"></div>
+
+      <h3 class="section">✨ Enhance / Upscale</h3>
+      <p style="color:#9aa3c7;font-size:13.5px;line-height:1.6">Chhoti video ko bari resolution par le jao (sirf upscale hota hai — bari video chhoti nahi hoti), sharpness aur rang bhi behtar karo.</p>
+      <label>Video file upload karo</label>
+      <input type="file" id="enFile" accept="video/*">
+      <label>— ya — Downloaded file select karo</label>
+      <select id="enJobFile" class="jobfile-sel"><option value="">(koi file nahi)</option></select>
+      <label>Target resolution</label>
+      <select id="enTarget"><option value="720">720p HD</option><option value="1080" selected>1080p Full HD</option><option value="2160">4K (2160p)</option></select>
+      <label class="check"><input type="checkbox" id="enSharpen"> 🔪 Sharpen karo</label>
+      <label class="check"><input type="checkbox" id="enAuto"> 🌈 Auto Enhance (rang/roshni khud behtar)</label>
+      <div class="row" style="margin-top:14px">
+        <button class="primary" id="enBtn" onclick="doEnhance()" style="width:100%">✨ Enhance Karo</button>
+      </div>
+      <div class="status" id="enStatus"></div>
+
+      <h3 class="section">🔊 Audio Fix</h3>
+      <p style="color:#9aa3c7;font-size:13.5px;line-height:1.6">Awaz ka shor (noise) kam karo aur volume ko barabar (normalize) karo — video waisi ki waisi rahegi.</p>
+      <label>Video file upload karo</label>
+      <input type="file" id="afFile" accept="video/*">
+      <label>— ya — Downloaded file select karo</label>
+      <select id="afJobFile" class="jobfile-sel"><option value="">(koi file nahi)</option></select>
+      <label class="check"><input type="checkbox" id="afDenoise" checked> 🧹 Denoise — peeche ka shor kam karo</label>
+      <label class="check"><input type="checkbox" id="afNormalize" checked> 📢 Normalize — awaz barabar aur wazeh</label>
+      <div class="row" style="margin-top:14px">
+        <button class="primary" id="afBtn" onclick="doAudioFix()" style="width:100%">🔊 Audio Fix Karo</button>
+      </div>
+      <div class="status" id="afStatus"></div>
+
+      <h3 class="section">✂️ Silence Cut (Auto Cut)</h3>
+      <p style="color:#9aa3c7;font-size:13.5px;line-height:1.6">Video ki lambi khamoshiyan khud kaat kar video tight bana do — sirf 15 minute tak ki video.</p>
+      <label>Video file upload karo</label>
+      <input type="file" id="scFile" accept="video/*">
+      <label>— ya — Downloaded file select karo</label>
+      <select id="scJobFile" class="jobfile-sel"><option value="">(koi file nahi)</option></select>
+      <div class="row" style="margin-top:14px">
+        <button class="primary" id="scBtn" onclick="doSilenceCut()" style="width:100%">✂️ Khamoshiyan Kaato</button>
+      </div>
+      <div class="status" id="scStatus"></div>
+
+      <h3 class="section">🟢 Green Screen (Chroma Key)</h3>
+      <p style="color:#9aa3c7;font-size:13.5px;line-height:1.6">Video ka hara (green) background hata kar peeche apna rang ya apni photo lagao.</p>
+      <label>Video file upload karo</label>
+      <input type="file" id="ckFile" accept="video/*">
+      <label>— ya — Downloaded file select karo</label>
+      <select id="ckJobFile" class="jobfile-sel"><option value="">(koi file nahi)</option></select>
+      <div class="row">
+        <div><label>Key color (jo hatana hai)</label><input type="color" id="ckKey" value="#00ff00"></div>
+        <div><label>Background color</label><input type="color" id="ckBgColor" value="#0000ff"></div>
+      </div>
+      <label>Similarity: <span id="ckSimVal">0.25</span> (zyada = zyada hara katega)</label>
+      <input type="range" id="ckSim" min="0.1" max="0.5" step="0.05" value="0.25" oninput="document.getElementById('ckSimVal').textContent=this.value">
+      <label>Background photo (optional — ho to color ki jagah ye lagegi)</label>
+      <input type="file" id="ckBg" accept="image/*">
+      <div class="row" style="margin-top:14px">
+        <button class="primary" id="ckBtn" onclick="doChromakey()" style="width:100%">🟢 Background Badlo</button>
+      </div>
+      <div class="status" id="ckStatus"></div>
+
+      <h3 class="section">🧰 More Tools</h3>
+      <p style="color:#9aa3c7;font-size:13.5px;line-height:1.6">Chhote chhote kaam — neeche wali charon tools ke liye yehi aik source lagega.</p>
+      <label>Video file upload karo</label>
+      <input type="file" id="mtFile" accept="video/*">
+      <label>— ya — Downloaded file select karo</label>
+      <select id="mtJobFile" class="jobfile-sel"><option value="">(koi file nahi)</option></select>
+      <div class="row">
+        <div><label>GIF: shuru (sec)</label><input type="number" id="gifStart" min="0" step="0.5" value="0"></div>
+        <div><label>GIF: length (sec, max 10)</label><input type="number" id="gifDur" min="1" max="10" value="3"></div>
+        <div><label>GIF: width</label>
+          <select id="gifWidth"><option value="320">320px</option><option value="480" selected>480px</option></select></div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="ghost" id="gifBtn" onclick="doGif()">🎞 GIF Banao</button>
+        <button class="ghost" id="mp3Btn" onclick="doMp3()">🎵 MP3 Nikalo</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div><label>Compress quality</label>
+          <select id="cmpQuality"><option value="high">High (halki compression)</option><option value="medium" selected>Medium</option><option value="small">Small (sab se chhoti file)</option></select></div>
+        <div><label>Thumbnail: waqt (sec)</label><input type="number" id="thumbTime" min="0" step="0.5" value="1"></div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="ghost" id="cmpBtn" onclick="doCompress()">🗜 Compress Karo</button>
+        <button class="ghost" id="thumbBtn" onclick="doThumbnail()">🖼 Thumbnail Lo</button>
+      </div>
+      <div class="status" id="mtStatus"></div>
+    </div>
   </div>
 
   <div class="platforms">
     <span>Facebook</span><span>YouTube</span><span>TikTok</span><span>Instagram</span><span>X</span><span>+ 1000 more</span>
   </div>
-  <footer>Made for creators • Download • Grab • Profiles • Clipper & Effects • Brand Overlay • Auto Clips • Subtitles • Upload • Dashboard — Download responsibly</footer>
+  <footer>Made for creators • Download • Grab • Profiles • Clipper & Effects • Brand Overlay • Auto Clips • Subtitles • Voiceover • Editor Tools • Upload • Dashboard — Download responsibly</footer>
 </div>
 
 <script>
@@ -530,10 +735,10 @@ async function checkSession() {
 /* ---------- TABS ---------- */
 function showTab(t, btn) {
   document.querySelectorAll('.tab[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
-  ['download','grab','clip','subs','upload','jobs','profiles','dash'].forEach(x =>
+  ['download','grab','clip','subs','upload','jobs','profiles','dash','voice','editor'].forEach(x =>
     document.getElementById('tab-' + x).classList.toggle('hidden', x !== t));
   if (t === 'jobs') loadJobs();
-  if (t === 'clip') refreshClipFiles();
+  if (t === 'clip' || t === 'voice' || t === 'editor') refreshClipFiles();
   if (t === 'profiles') loadProfiles();
   if (t === 'dash') loadStats();
 }
@@ -802,6 +1007,7 @@ async function doSubtitles() {
   const f = document.getElementById('subFile').files[0];
   if (!f) { setStatus('subStatus', 'Pehle video file select karo.', 'err'); return; }
   const fd = new FormData(); fd.append('video', f);
+  fd.append('translate', document.getElementById('subTranslate').checked ? '1' : '');
   const btn = document.getElementById('subBtn'); btn.disabled = true;
   setStatus('subStatus', '💬 Captions ban rahe hain… bari video mein waqt lagega.', 'info');
   try {
@@ -1003,6 +1209,9 @@ async function doEffects() {
   fd.append('rotate', document.getElementById('fxRotate').value);
   fd.append('crop_on', document.getElementById('fxCropOn').checked ? '1' : '');
   fd.append('crop_pct', document.getElementById('fxCropPct').value);
+  fd.append('preset', document.getElementById('fxPreset').value);
+  fd.append('speed', document.getElementById('fxSpeed').value);
+  fd.append('reverse', document.getElementById('fxReverse').checked ? '1' : '');
   await postMediaJob('/api/effects', fd, 'fxStatus', 'fxBtn', 'Effects wali video');
 }
 
@@ -1052,6 +1261,119 @@ async function doAutoclips() {
     loadJobs(); refreshClipFiles();
   } catch(e) { setStatus('acStatus', '❌ ' + e.message, 'err'); }
   btn.disabled = false;
+}
+
+/* ---------- VOICEOVER ---------- */
+async function doVoiceover() {
+  const text = document.getElementById('voText').value.trim();
+  if (!text) { setStatus('voStatus', 'Pehle text likho jo bolna hai.', 'err'); return; }
+  const btn = document.getElementById('voBtn'); btn.disabled = true;
+  setStatus('voStatus', '🎙 Awaz ban rahi hai… online service hai, chand seconds lag sakte hain.', 'info');
+  try {
+    const r = await api('/api/voiceover', jsonOpts({text, voice: document.getElementById('voVoice').value}));
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) throw new Error(d.error || 'Voiceover fail ho gaya');
+    showJobResult('voStatus', d, 'Voiceover (' + (d.engine || '') + ')');
+    loadJobs(); refreshClipFiles();
+  } catch(e) { setStatus('voStatus', '❌ ' + e.message, 'err'); }
+  btn.disabled = false;
+}
+async function doVoiceoverAdd() {
+  const fd = new FormData();
+  if (!fillSource(fd, 'voaFile', 'voaJobFile')) { setStatus('voaStatus', 'Video file upload karo ya downloaded file select karo.', 'err'); return; }
+  const af = document.getElementById('voaAudioFile').files[0];
+  const aSel = document.getElementById('voaAudioJob').value;
+  if (af) fd.append('audio', af);
+  else if (aSel) { const p = aSel.split('|'); fd.append('audio_job_id', p[0]); fd.append('audio_filename', p[1]); }
+  else { setStatus('voaStatus', 'Audio file upload karo ya voiceover job ki file select karo.', 'err'); return; }
+  fd.append('mode', document.getElementById('voaMode').value);
+  fd.append('bg_volume', document.getElementById('voaBgVol').value);
+  await postMediaJob('/api/voiceover-add', fd, 'voaStatus', 'voaBtn', 'Voiceover wali video');
+}
+
+/* ---------- EDITOR TOOLS ---------- */
+async function doTransition() {
+  const fd = new FormData();
+  if (!fillSource(fd, 'trFile1', 'trJobFile1')) { setStatus('trStatus', 'Pehli video upload karo ya file select karo.', 'err'); return; }
+  const f2 = document.getElementById('trFile2').files[0];
+  const sel2 = document.getElementById('trJobFile2').value;
+  if (f2) fd.append('video2', f2);
+  else if (sel2) { const p = sel2.split('|'); fd.append('job_id2', p[0]); fd.append('filename2', p[1]); }
+  else { setStatus('trStatus', 'Doosri video upload karo ya file select karo.', 'err'); return; }
+  fd.append('transition', document.getElementById('trName').value);
+  fd.append('duration', document.getElementById('trDur').value);
+  await postMediaJob('/api/transition', fd, 'trStatus', 'trBtn', 'Joined video');
+}
+async function doTitle() {
+  const fd = new FormData();
+  if (!fillSource(fd, 'ttFile', 'ttJobFile')) { setStatus('ttStatus', 'Video file upload karo ya downloaded file select karo.', 'err'); return; }
+  const text = document.getElementById('ttText').value.trim();
+  if (!text) { setStatus('ttStatus', 'Title ka text likho.', 'err'); return; }
+  fd.append('text', text);
+  fd.append('start', document.getElementById('ttStart').value);
+  fd.append('end', document.getElementById('ttEnd').value);
+  fd.append('size', document.getElementById('ttSize').value);
+  fd.append('color', document.getElementById('ttColor').value);
+  fd.append('position', document.getElementById('ttPos').value);
+  fd.append('box', document.getElementById('ttBox').checked ? '1' : '');
+  fd.append('box_color', document.getElementById('ttBoxColor').value);
+  await postMediaJob('/api/title', fd, 'ttStatus', 'ttBtn', 'Title wali video');
+}
+async function doEnhance() {
+  const fd = new FormData();
+  if (!fillSource(fd, 'enFile', 'enJobFile')) { setStatus('enStatus', 'Video file upload karo ya downloaded file select karo.', 'err'); return; }
+  fd.append('target', document.getElementById('enTarget').value);
+  fd.append('sharpen', document.getElementById('enSharpen').checked ? '1' : '');
+  fd.append('auto', document.getElementById('enAuto').checked ? '1' : '');
+  await postMediaJob('/api/enhance', fd, 'enStatus', 'enBtn', 'Enhanced video');
+}
+async function doAudioFix() {
+  const fd = new FormData();
+  if (!fillSource(fd, 'afFile', 'afJobFile')) { setStatus('afStatus', 'Video file upload karo ya downloaded file select karo.', 'err'); return; }
+  fd.append('denoise', document.getElementById('afDenoise').checked ? '1' : '');
+  fd.append('normalize', document.getElementById('afNormalize').checked ? '1' : '');
+  await postMediaJob('/api/audiofix', fd, 'afStatus', 'afBtn', 'Audio fixed video');
+}
+async function doSilenceCut() {
+  const fd = new FormData();
+  if (!fillSource(fd, 'scFile', 'scJobFile')) { setStatus('scStatus', 'Video file upload karo ya downloaded file select karo.', 'err'); return; }
+  await postMediaJob('/api/silence-cut', fd, 'scStatus', 'scBtn', 'Silence cut video');
+}
+async function doChromakey() {
+  const fd = new FormData();
+  if (!fillSource(fd, 'ckFile', 'ckJobFile')) { setStatus('ckStatus', 'Video file upload karo ya downloaded file select karo.', 'err'); return; }
+  fd.append('key_color', document.getElementById('ckKey').value);
+  fd.append('bg_color', document.getElementById('ckBgColor').value);
+  fd.append('similarity', document.getElementById('ckSim').value);
+  const bg = document.getElementById('ckBg').files[0];
+  if (bg) fd.append('bg', bg);
+  await postMediaJob('/api/chromakey', fd, 'ckStatus', 'ckBtn', 'Green screen video');
+}
+function mtSource(statusId) {
+  const fd = new FormData();
+  if (!fillSource(fd, 'mtFile', 'mtJobFile')) { setStatus(statusId, 'Video file upload karo ya downloaded file select karo.', 'err'); return null; }
+  return fd;
+}
+async function doGif() {
+  const fd = mtSource('mtStatus'); if (!fd) return;
+  fd.append('start', document.getElementById('gifStart').value);
+  fd.append('duration', document.getElementById('gifDur').value);
+  fd.append('width', document.getElementById('gifWidth').value);
+  await postMediaJob('/api/gif', fd, 'mtStatus', 'gifBtn', 'GIF');
+}
+async function doMp3() {
+  const fd = mtSource('mtStatus'); if (!fd) return;
+  await postMediaJob('/api/mp3', fd, 'mtStatus', 'mp3Btn', 'MP3 audio');
+}
+async function doCompress() {
+  const fd = mtSource('mtStatus'); if (!fd) return;
+  fd.append('quality', document.getElementById('cmpQuality').value);
+  await postMediaJob('/api/compress', fd, 'mtStatus', 'cmpBtn', 'Compressed video');
+}
+async function doThumbnail() {
+  const fd = mtSource('mtStatus'); if (!fd) return;
+  fd.append('time', document.getElementById('thumbTime').value);
+  await postMediaJob('/api/thumbnail', fd, 'mtStatus', 'thumbBtn', 'Thumbnail');
 }
 
 /* ---------- PROFILES ---------- */

@@ -18,6 +18,11 @@ Features:
   - Brand Overlay — text / PNG logo watermark
   - Auto Clips — lambi video se khud chhote clips (watermark ke sath)
   - Dashboard — usage stats (downloads, size, top sources, job types)
+  - AI Voiceover — text se awaz (edge-tts, fallback gTTS) + video par lagana
+  - Editor Tools — title text, transitions/joiner, enhance/upscale,
+    audio fix (denoise/normalize), silence cut, green screen (chromakey),
+    GIF / MP3 / compress / thumbnail
+  - Effects upgrades — filter presets, speed control, reverse
 
 Run:  ./venv/bin/python app.py
 """
@@ -347,6 +352,28 @@ def probe_dims(path):
         return None, None
 
 
+def probe_duration(path):
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "csv=p=0", path],
+            capture_output=True, text=True, timeout=30)
+        return float(r.stdout.strip())
+    except Exception:
+        return None
+
+
+def probe_has_audio(path):
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "a",
+             "-show_entries", "stream=index", "-of", "csv=p=0", path],
+            capture_output=True, text=True, timeout=30)
+        return bool(r.stdout.strip())
+    except Exception:
+        return False
+
+
 def human_size(n):
     n = float(n or 0)
     for unit in ("B", "KB", "MB", "GB", "TB"):
@@ -370,13 +397,16 @@ def bump_stats(user_id, downloads=0, nbytes=0):
 
 
 def _ratio_vf(fmt):
-    """9:16 / 16:9 ke liye scale+pad filter (aspect barqarar, setsar=1)."""
+    """9:16 / 16:9 / 1:1 ke liye scale+pad filter (aspect barqarar, setsar=1)."""
     if fmt == "vertical":
         return ("scale=1080:1920:force_original_aspect_ratio=decrease,"
                 "pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1")
     if fmt == "horizontal":
         return ("scale=1920:1080:force_original_aspect_ratio=decrease,"
                 "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1")
+    if fmt == "square":
+        return ("scale=1080:1080:force_original_aspect_ratio=decrease,"
+                "pad=1080:1080:(ow-iw)/2:(oh-ih)/2,setsar=1")
     return None
 
 
@@ -455,27 +485,34 @@ def _source_title(fallback="Video"):
     return fallback
 
 
-def _run_ffmpeg_job(user_id, jtype, title, cmd_for_out):
+def _register_file_job(user_id, jtype, title, job_dir, out_path):
+    """Job dir mein tayyar file ko finished job bana kar result dict do."""
+    job_id = os.path.basename(job_dir)
+    fname = os.path.basename(out_path)
+    h = probe_height(out_path)
+    item = {"url": None, "title": title, "file": fname, "status": "done",
+            "height": h, "quality": quality_label(h),
+            "size": os.path.getsize(out_path), "error": None, "progress": 100}
+    save_job(job_id, user_id, jtype, {"items": [item], "done": 1, "total": 1},
+             status="finished")
+    return {"job_id": job_id, "download_url": f"/api/files/{job_id}/{fname}",
+            "title": title, "quality": item["quality"], "size": item["size"]}
+
+
+def _run_ffmpeg_job(user_id, jtype, title, cmd_for_out, ext="mp4"):
     """ffmpeg chala kar output ko aik finished job bana do.
     cmd_for_out(out_path) -> puri ffmpeg command list.
     Success par (result_dict, None), fail par (None, error_str)."""
     job_id = uuid.uuid4().hex
     job_dir = os.path.join(JOBS_DIR, job_id)
     os.makedirs(job_dir, exist_ok=True)
-    out_path = os.path.join(job_dir, "000.mp4")
+    out_path = os.path.join(job_dir, f"000.{ext}")
     cmd = cmd_for_out(out_path)
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
     if r.returncode != 0 or not os.path.isfile(out_path) or os.path.getsize(out_path) == 0:
         shutil.rmtree(job_dir, ignore_errors=True)
         return None, (r.stderr or "ffmpeg fail ho gaya")[-250:]
-    h = probe_height(out_path)
-    item = {"url": None, "title": title, "file": "000.mp4", "status": "done",
-            "height": h, "quality": quality_label(h),
-            "size": os.path.getsize(out_path), "error": None, "progress": 100}
-    save_job(job_id, user_id, jtype, {"items": [item], "done": 1, "total": 1},
-             status="finished")
-    return {"job_id": job_id, "download_url": f"/api/files/{job_id}/000.mp4",
-            "title": title, "quality": item["quality"], "size": item["size"]}, None
+    return _register_file_job(user_id, jtype, title, job_dir, out_path), None
 
 # ---------------------------------------------------------------- pages
 
@@ -546,7 +583,7 @@ def download():
     if data.get("use_cookies") and cf:
         extra["cookiefile"] = cf
     fmt = (data.get("fmt") or "original").strip()
-    if fmt not in ("original", "vertical", "horizontal"):
+    if fmt not in ("original", "vertical", "horizontal", "square"):
         fmt = "original"
     secs = data.get("secs")
     opts = ydl_opts(extra)
@@ -791,7 +828,7 @@ def bulk_download():
     if len(urls) > 100:
         return jsonify({"ok": False, "error": "Aik dafa mein zyada se zyada 100 videos select karo."}), 400
     fmt = (data.get("fmt") or "original").strip()
-    if fmt not in ("original", "vertical", "horizontal"):
+    if fmt not in ("original", "vertical", "horizontal", "square"):
         fmt = "original"
     try:
         secs = float(data["secs"]) if data.get("secs") else None
@@ -993,6 +1030,8 @@ def subtitles():
     f = request.files.get("video")
     if not f or not f.filename:
         return jsonify({"ok": False, "error": "Video file upload karo."}), 400
+    # translate=1 ho to captions English mein bante hain (whisper ka translate task)
+    translate = _bool_int(request.form.get("translate"))
     src = _temp_upload(f, suffix=os.path.splitext(f.filename)[1] or ".mp4")
     wav = src + ".wav"
     srt_path = os.path.join(DOWNLOAD_DIR, f"subs-{uuid.uuid4().hex}.srt")
@@ -1001,7 +1040,10 @@ def subtitles():
                            capture_output=True, text=True, timeout=900)
         if r.returncode != 0:
             return jsonify({"ok": False, "error": "Video se audio nahi nikal saka."}), 422
-        segments, _info = model.transcribe(_load_wav_array(wav))
+        if translate:
+            segments, _info = model.transcribe(_load_wav_array(wav), task="translate")
+        else:
+            segments, _info = model.transcribe(_load_wav_array(wav))
         lines = []
         for i, seg in enumerate(segments, 1):
             lines.append(str(i))
@@ -1250,10 +1292,41 @@ def effects():
     crop_on = _bool_int(request.form.get("crop_on"))
     crop_pct = fnum("crop_pct", 10.0, 0.0, 45.0)
 
+    # --- Flixier-style upgrades: filter preset, speed, reverse ---
+    preset = (request.form.get("preset") or "none").strip()
+    PRESETS = {
+        # warm/cool: colorbalance se halki si garam/thandi tone
+        "warm": "colorbalance=rm=0.12:gm=0.04:bm=-0.12:rs=0.10:bs=-0.10",
+        "cool": "colorbalance=rm=-0.10:bm=0.12:rs=-0.08:bs=0.10",
+        "mono": "hue=s=0",
+        "vintage": "curves=preset=vintage,eq=saturation=0.75",
+        "vibrant": "eq=saturation=1.5:contrast=1.08",
+    }
+    try:
+        speed = float(request.form.get("speed") or 1)
+    except ValueError:
+        speed = 1.0
+    if speed not in (0.5, 0.75, 1.0, 1.25, 1.5, 2.0):
+        speed = 1.0
+    reverse = _bool_int(request.form.get("reverse"))
+    if reverse:
+        dur = probe_duration(src)
+        if dur is not None and dur > 60:
+            if cleanup:
+                try:
+                    os.remove(src)
+                except OSError:
+                    pass
+            return jsonify({"ok": False, "error": "Reverse sirf 60 seconds tak ki "
+                            "video par lag sakta hai — ye video lambi hai, pehle "
+                            "Clipper se chhota hissa kaat lo."}), 400
+
     filters = []
     if crop_on and crop_pct > 0:
         frac = 1 - 2 * crop_pct / 100.0
         filters.append(f"crop=iw*{frac:.4f}:ih*{frac:.4f}")
+    if preset in PRESETS:
+        filters.append(PRESETS[preset])
     filters.append(f"eq=brightness={brightness}:contrast={contrast}:saturation={saturation}")
     if flip == "h":
         filters.append("hflip")
@@ -1265,11 +1338,36 @@ def effects():
         filters.append("transpose=2")
     elif rotate == 180:
         filters += ["hflip", "vflip"]
+    if reverse:
+        filters.append("reverse")
+    if speed != 1.0:
+        filters.append(f"setpts=PTS/{speed}")
     vf = ",".join(filters)
+
+    afilters = []
+    if probe_has_audio(src):
+        if reverse:
+            afilters.append("areverse")
+        if speed != 1.0:
+            # atempo aik step mein 0.5–2 hi sambhalta hai — chain banao
+            v = speed
+            while v > 2.0:
+                afilters.append("atempo=2.0")
+                v /= 2.0
+            while v < 0.5:
+                afilters.append("atempo=0.5")
+                v /= 0.5
+            afilters.append(f"atempo={v}")
+    af = ",".join(afilters) if afilters else None
     title = _source_title("Video") + " (effects)"
-    result, err = _run_ffmpeg_job(
-        session["user_id"], "effect", title,
-        lambda out: ["ffmpeg", "-y", "-i", src, "-vf", vf] + ENC_ARGS + [out])
+
+    def build_fx(out):
+        cmd = ["ffmpeg", "-y", "-i", src, "-vf", vf]
+        if af:
+            cmd += ["-af", af]
+        return cmd + ENC_ARGS + [out]
+
+    result, err = _run_ffmpeg_job(session["user_id"], "effect", title, build_fx)
     if cleanup:
         try:
             os.remove(src)
@@ -1468,6 +1566,683 @@ def stats():
                     "downloaded_human": human_size(nbytes),
                     "failed": failed, "by_type": by_type,
                     "top_sources": top_sources})
+
+# ---------------------------------------------------------------- AI voiceover
+
+EDGE_VOICES = [
+    "ur-PK-UzmaNeural", "ur-PK-AsadNeural",
+    "hi-IN-SwaraNeural", "hi-IN-MadhurNeural",
+    "en-US-AriaNeural", "en-US-GuyNeural",
+    "en-GB-SoniaNeural", "en-IN-NeerjaNeural",
+]
+_edge_ctx_ready = False
+
+
+def _edge_synthesize(text, voice, out_path):
+    """edge-tts (Microsoft ki online awazein) se mp3 banao.
+    Kuch networks par darmiyan mein proxy apna CA laga deta hai — certifi ke
+    sath system CA bundle mila kar SSL context banao taake dono jagah chale."""
+    global _edge_ctx_ready
+    import asyncio
+    import ssl
+    import edge_tts
+    if not _edge_ctx_ready:
+        try:
+            import certifi
+            import edge_tts.communicate as _comm
+            parts = []
+            for p in (certifi.where(), ssl.get_default_verify_paths().cafile):
+                if p and os.path.exists(p):
+                    with open(p, "rb") as fh:
+                        parts.append(fh.read())
+            if parts:
+                bundle = os.path.join(DATA_DIR, "ca-bundle.pem")
+                with open(bundle, "wb") as fh:
+                    fh.write(b"\n".join(parts))
+                _comm._SSL_CTX = ssl.create_default_context(cafile=bundle)
+        except Exception:
+            pass
+        _edge_ctx_ready = True
+    proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy") or None
+
+    async def _main():
+        comm = edge_tts.Communicate(text, voice, proxy=proxy)
+        await asyncio.wait_for(comm.save(out_path), timeout=120)
+
+    asyncio.run(_main())
+
+
+def _gtts_synthesize(text, lang, out_path):
+    from gtts import gTTS
+    gTTS(text=text, lang=lang).save(out_path)
+
+
+@app.route("/api/voiceover", methods=["POST"])
+@login_required
+def voiceover():
+    data = request.get_json(force=True, silent=True) or {}
+    text = (data.get("text") or "").strip()
+    voice = (data.get("voice") or "ur-PK-UzmaNeural").strip()
+    if not text:
+        return jsonify({"ok": False, "error": "Pehle text likho jo bolna hai."}), 400
+    if len(text) > 2000:
+        return jsonify({"ok": False, "error": "Text zyada lamba hai — zyada se zyada 2000 characters rakho."}), 400
+    if voice not in EDGE_VOICES:
+        return jsonify({"ok": False, "error": "Voice sahi select karo."}), 400
+    job_id = uuid.uuid4().hex
+    job_dir = os.path.join(JOBS_DIR, job_id)
+    os.makedirs(job_dir, exist_ok=True)
+    out_path = os.path.join(job_dir, "000.mp3")
+    engine, err_edge = None, None
+    try:
+        _edge_synthesize(text, voice, out_path)
+        if not os.path.isfile(out_path) or os.path.getsize(out_path) == 0:
+            raise RuntimeError("edge-tts se khali file bani")
+        engine = "Microsoft Edge (online awaz)"
+    except Exception as e:
+        err_edge = str(e)[:150]
+        try:
+            os.remove(out_path)
+        except OSError:
+            pass
+        # Fallback: Google TTS (zuban voice ke pehle hisse se: ur/hi/en)
+        lang = voice.split("-")[0].lower()
+        if lang not in ("ur", "hi", "en"):
+            lang = "en"
+        try:
+            _gtts_synthesize(text, lang, out_path)
+            engine = "Google TTS (fallback)"
+        except Exception as e2:
+            shutil.rmtree(job_dir, ignore_errors=True)
+            return jsonify({"ok": False,
+                            "error": f"Voiceover nahi ban saka. Edge: {err_edge} | Google: {str(e2)[:150]}"}), 422
+    result = _register_file_job(session["user_id"], "voiceover",
+                                f"Voiceover ({voice})", job_dir, out_path)
+    result["engine"] = engine
+    return jsonify({"ok": True, **result})
+
+
+def _resolve_job_file(job_id, filename):
+    """User ki kisi job ki file ka path (voiceover audio / doosri video ke liye)."""
+    job_id = (job_id or "").strip()
+    fname = os.path.basename(filename or "")
+    if job_id and fname and get_job(job_id, session["user_id"]):
+        cand = os.path.join(JOBS_DIR, job_id, fname)
+        if os.path.isfile(cand):
+            return cand
+    return None
+
+
+@app.route("/api/voiceover-add", methods=["POST"])
+@login_required
+def voiceover_add():
+    vsrc, vclean = _resolve_source()
+    if not vsrc:
+        return jsonify({"ok": False, "error": "Video file upload karo ya downloaded file select karo."}), 400
+    asrc, aclean = None, False
+    af = request.files.get("audio")
+    if af and af.filename:
+        asrc = _temp_upload(af, suffix=os.path.splitext(af.filename)[1] or ".mp3")
+        aclean = True
+    else:
+        asrc = _resolve_job_file(request.form.get("audio_job_id"),
+                                 request.form.get("audio_filename"))
+    if not asrc:
+        if vclean:
+            try:
+                os.remove(vsrc)
+            except OSError:
+                pass
+        return jsonify({"ok": False, "error": "Audio file upload karo ya voiceover job ki file select karo."}), 400
+    mode = (request.form.get("mode") or "replace").strip()
+    if mode not in ("replace", "mix"):
+        mode = "replace"
+    try:
+        bg_volume = max(0.0, min(1.0, float(request.form.get("bg_volume") or 0.3)))
+    except ValueError:
+        bg_volume = 0.3
+    title = _source_title("Video") + " (voiceover)"
+    has_audio = probe_has_audio(vsrc)
+
+    def build_replace(out):
+        return (["ffmpeg", "-y", "-i", vsrc, "-i", asrc,
+                 "-map", "0:v:0", "-map", "1:a:0", "-shortest"] + ENC_ARGS + [out])
+
+    def build_mix(out):
+        fc = (f"[0:a]volume={bg_volume:.2f}[bgm];[1:a]volume=1.0[vo];"
+              "[bgm][vo]amix=inputs=2:duration=first:dropout_transition=0[aout]")
+        return (["ffmpeg", "-y", "-i", vsrc, "-i", asrc,
+                 "-filter_complex", fc, "-map", "0:v:0", "-map", "[aout]"]
+                + ENC_ARGS + [out])
+
+    build = build_mix if (mode == "mix" and has_audio) else build_replace
+    result, err = _run_ffmpeg_job(session["user_id"], "voiceover", title, build)
+    for p, cl in ((vsrc, vclean), (asrc, aclean)):
+        if cl and p:
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+    if err:
+        return jsonify({"ok": False, "error": f"Voiceover nahi lag saka: {err}"}), 422
+    return jsonify({"ok": True, **result})
+
+# ---------------------------------------------------------------- editor tools
+
+def _hex6(val, default):
+    """'#rrggbb' ya 'rrggbb' ko saaf 6-hex mein; ghalat ho to default."""
+    h = (val or "").strip().lstrip("#")
+    if len(h) == 6 and all(c in "0123456789abcdefABCDEF" for c in h):
+        return h.lower()
+    return default
+
+
+def _resolve_source2():
+    """Doosri video (transition ke liye): file field 'video2' ya
+    form 'job_id2' + 'filename2'."""
+    f = request.files.get("video2")
+    if f and f.filename:
+        return _temp_upload(f, suffix=os.path.splitext(f.filename)[1] or ".mp4"), True
+    path = _resolve_job_file(request.form.get("job_id2"),
+                             request.form.get("filename2"))
+    return path, False
+
+
+@app.route("/api/title", methods=["POST"])
+@login_required
+def title_text():
+    src, cleanup = _resolve_source()
+    if not src:
+        return jsonify({"ok": False, "error": "Video file upload karo ya downloaded file select karo."}), 400
+    text = (request.form.get("text") or "").strip()
+    if not text:
+        if cleanup:
+            try:
+                os.remove(src)
+            except OSError:
+                pass
+        return jsonify({"ok": False, "error": "Title ka text likho."}), 400
+
+    def fnum(name, default, lo, hi):
+        try:
+            return max(lo, min(hi, float(request.form.get(name))))
+        except (TypeError, ValueError):
+            return default
+
+    start = fnum("start", 0.0, 0.0, 86400.0)
+    end = fnum("end", 3.0, 0.0, 86400.0)
+    if end <= start:
+        end = start + 3.0
+    size = int(fnum("size", 48, 16, 160))
+    color = _hex6(request.form.get("color"), "ffffff")
+    box_on = _bool_int(request.form.get("box"))
+    box_color = _hex6(request.form.get("box_color"), "000000")
+    pos = (request.form.get("position") or "top").strip()
+    XY = {"top": ("(w-text_w)/2", "30"),
+          "center": ("(w-text_w)/2", "(h-text_h)/2"),
+          "bottom": ("(w-text_w)/2", "h-text_h-30")}
+    x, y = XY.get(pos, XY["top"])
+    textfile = _write_textfile(text)
+    esc = textfile.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
+    parts = []
+    if FONT_FILE:
+        parts.append(f"fontfile='{FONT_FILE}'")
+    parts += [f"textfile='{esc}'", f"fontcolor=0x{color}", f"fontsize={size}",
+              f"x={x}", f"y={y}",
+              f"enable='between(t,{start:.3f},{end:.3f})'"]
+    if box_on:
+        parts += ["box=1", f"boxcolor=0x{box_color}@0.55", "boxborderw=12"]
+    vf = "drawtext=" + ":".join(parts)
+    title = _source_title("Video") + " (title)"
+    result, err = _run_ffmpeg_job(
+        session["user_id"], "title", title,
+        lambda out: ["ffmpeg", "-y", "-i", src, "-vf", vf] + ENC_ARGS + [out])
+    for p in ([src] if cleanup else []) + [textfile]:
+        try:
+            os.remove(p)
+        except OSError:
+            pass
+    if err:
+        return jsonify({"ok": False, "error": f"Title nahi lag saka: {err}"}), 422
+    return jsonify({"ok": True, **result})
+
+
+@app.route("/api/transition", methods=["POST"])
+@login_required
+def transition():
+    src1, clean1 = _resolve_source()
+    if not src1:
+        return jsonify({"ok": False, "error": "Pehli video upload karo ya job file select karo."}), 400
+    src2, clean2 = _resolve_source2()
+    if not src2:
+        if clean1:
+            try:
+                os.remove(src1)
+            except OSError:
+                pass
+        return jsonify({"ok": False, "error": "Doosri video upload karo ya job file select karo."}), 400
+    name = (request.form.get("transition") or "fade").strip()
+    ALLOWED = ("none", "fade", "fadeblack", "wipeleft", "slideright",
+               "circleopen", "dissolve")
+    if name not in ALLOWED:
+        name = "fade"
+    try:
+        dur_t = float(request.form.get("duration") or 1)
+    except ValueError:
+        dur_t = 1.0
+    if dur_t not in (0.5, 1.0, 2.0):
+        dur_t = 1.0
+    d1, d2 = probe_duration(src1), probe_duration(src2)
+    w1, h1 = probe_dims(src1)
+    w2, h2 = probe_dims(src2)
+    err = None
+    if not d1 or not d2:
+        err = "Kisi video ki duration nahi parhi ja saki."
+    elif name != "none" and (dur_t >= d1 or dur_t >= d2):
+        err = "Transition ki duration dono videos se chhoti honi chahiye."
+    if err:
+        for p, cl in ((src1, clean1), (src2, clean2)):
+            if cl:
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+        return jsonify({"ok": False, "error": err}), 400
+    W = max(w1 or 640, w2 or 640)
+    H = max(h1 or 360, h2 or 360)
+    W += W % 2
+    H += H % 2
+
+    inputs = ["-i", src1, "-i", src2]
+    fc = []
+    for i in (0, 1):
+        fc.append(f"[{i}:v]scale={W}:{H}:force_original_aspect_ratio=decrease,"
+                  f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,settb=AVTB,"
+                  f"format=yuv420p[v{i}]")
+    # audio normalize — jis video mein awaz nahi, uske liye khamoshi banao
+    next_idx = 2
+    for i, (s, d) in enumerate(((src1, d1), (src2, d2))):
+        if probe_has_audio(s):
+            fc.append(f"[{i}:a]aformat=sample_fmts=fltp:sample_rates=48000:"
+                      f"channel_layouts=stereo,asetpts=PTS-STARTPTS[a{i}]")
+        else:
+            inputs += ["-f", "lavfi", "-i",
+                       "anullsrc=channel_layouts=stereo:sample_rate=48000"]
+            fc.append(f"[{next_idx}:a]atrim=start=0:end={d:.3f},asetpts=PTS-STARTPTS,"
+                      f"aformat=sample_fmts=fltp:sample_rates=48000:"
+                      f"channel_layouts=stereo[a{i}]")
+            next_idx += 1
+    if name == "none":
+        fc.append("[v0][a0][v1][a1]concat=n=2:v=1:a=1[vout][aout]")
+    else:
+        off = max(0.0, d1 - dur_t)
+        fc.append(f"[v0][v1]xfade=transition={name}:duration={dur_t}:"
+                  f"offset={off:.3f}[vout]")
+        fc.append(f"[a0][a1]acrossfade=d={dur_t}[aout]")
+
+    def build(out):
+        return (["ffmpeg", "-y"] + inputs +
+                ["-filter_complex", ";".join(fc),
+                 "-map", "[vout]", "-map", "[aout]"] + ENC_ARGS + [out])
+
+    result, err = _run_ffmpeg_job(session["user_id"], "join",
+                                  "Joined Video (transition)", build)
+    for p, cl in ((src1, clean1), (src2, clean2)):
+        if cl:
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+    if err:
+        return jsonify({"ok": False, "error": f"Videos join nahi ho sakeen: {err}"}), 422
+    return jsonify({"ok": True, **result})
+
+
+@app.route("/api/enhance", methods=["POST"])
+@login_required
+def enhance():
+    src, cleanup = _resolve_source()
+    if not src:
+        return jsonify({"ok": False, "error": "Video file upload karo ya downloaded file select karo."}), 400
+    try:
+        target = int(request.form.get("target") or 1080)
+    except ValueError:
+        target = 1080
+    if target not in (720, 1080, 2160):
+        target = 1080
+    sharpen = _bool_int(request.form.get("sharpen"))
+    auto = _bool_int(request.form.get("auto"))
+    _w, sh = probe_dims(src)
+    filters = []
+    if sh and sh < target:
+        filters.append(f"scale=-2:{target}")
+    if auto:
+        filters.append("eq=contrast=1.08:saturation=1.15:brightness=0.02")
+    if sharpen:
+        filters.append("unsharp=5:5:1.0:5:5:0.0")
+    title = _source_title("Video") + " (enhanced)"
+
+    def build(out):
+        cmd = ["ffmpeg", "-y", "-i", src]
+        if filters:
+            cmd += ["-vf", ",".join(filters)]
+        return cmd + ENC_ARGS + [out]
+
+    result, err = _run_ffmpeg_job(session["user_id"], "enhance", title, build)
+    if cleanup:
+        try:
+            os.remove(src)
+        except OSError:
+            pass
+    if err:
+        return jsonify({"ok": False, "error": f"Enhance nahi ho saka: {err}"}), 422
+    return jsonify({"ok": True, **result})
+
+
+@app.route("/api/audiofix", methods=["POST"])
+@login_required
+def audiofix():
+    src, cleanup = _resolve_source()
+    if not src:
+        return jsonify({"ok": False, "error": "Video file upload karo ya downloaded file select karo."}), 400
+    denoise = _bool_int(request.form.get("denoise"))
+    normalize = _bool_int(request.form.get("normalize"))
+    if not denoise and not normalize:
+        if cleanup:
+            try:
+                os.remove(src)
+            except OSError:
+                pass
+        return jsonify({"ok": False, "error": "Kam az kam aik option select karo — Denoise ya Normalize."}), 400
+    if not probe_has_audio(src):
+        if cleanup:
+            try:
+                os.remove(src)
+            except OSError:
+                pass
+        return jsonify({"ok": False, "error": "Is video mein audio hi nahi hai."}), 400
+    af = []
+    if denoise:
+        af.append("afftdn=nf=-25")
+    if normalize:
+        af.append("loudnorm=I=-16:TP=-1.5:LRA=11")
+    af_str = ",".join(af)
+    title = _source_title("Video") + " (audio fixed)"
+
+    def build_copy(out):
+        return ["ffmpeg", "-y", "-i", src, "-af", af_str,
+                "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
+                "-movflags", "+faststart", out]
+
+    def build_enc(out):
+        return ["ffmpeg", "-y", "-i", src, "-af", af_str] + ENC_ARGS + [out]
+
+    result, err = _run_ffmpeg_job(session["user_id"], "audiofix", title, build_copy)
+    if err:
+        # video copy na ho sake (ajeeb codec) to re-encode kar ke dobara try
+        result, err = _run_ffmpeg_job(session["user_id"], "audiofix", title, build_enc)
+    if cleanup:
+        try:
+            os.remove(src)
+        except OSError:
+            pass
+    if err:
+        return jsonify({"ok": False, "error": f"Audio fix nahi ho saka: {err}"}), 422
+    return jsonify({"ok": True, **result})
+
+
+@app.route("/api/silence-cut", methods=["POST"])
+@login_required
+def silence_cut():
+    src, cleanup = _resolve_source()
+    if not src:
+        return jsonify({"ok": False, "error": "Video file upload karo ya downloaded file select karo."}), 400
+
+    def _fail(msg, code=400):
+        if cleanup:
+            try:
+                os.remove(src)
+            except OSError:
+                pass
+        return jsonify({"ok": False, "error": msg}), code
+
+    dur = probe_duration(src)
+    if not dur:
+        return _fail("Video ki duration nahi parhi ja saki.")
+    if dur > 900:
+        return _fail("Silence Cut sirf 15 minute tak ki video par lag sakta hai — pehle Clipper se hissa kaat lo.")
+    r = subprocess.run(
+        ["ffmpeg", "-i", src, "-af", "silencedetect=noise=-35dB:d=0.6",
+         "-f", "null", "-"],
+        capture_output=True, text=True, timeout=1800)
+    silences = []
+    cur_start = None
+    for m in re.finditer(r"silence_(start|end):\s*([\d.]+)", r.stderr or ""):
+        if m.group(1) == "start":
+            cur_start = float(m.group(2))
+        elif cur_start is not None:
+            silences.append((cur_start, float(m.group(2))))
+            cur_start = None
+    if cur_start is not None:
+        silences.append((cur_start, dur))
+    if not silences:
+        return _fail("Is video mein koi lambi khamoshi (silence) nahi mili — video pehle se hi tight hai.", 422)
+    # keep segments: khamoshi ke dono taraf 0.1s ki padding rakho
+    keeps = []
+    cursor = 0.0
+    for s, e in silences:
+        kend = min(s + 0.1, dur)
+        if kend - cursor > 0.05:
+            keeps.append((cursor, kend))
+        cursor = max(cursor, e - 0.1)
+    if dur - cursor > 0.05:
+        keeps.append((cursor, dur))
+    keeps = [(max(0.0, s), min(dur, e)) for s, e in keeps if e - s > 0.05]
+    if not keeps:
+        return _fail("Poori video hi khamoshi lagti hai — kuch bacha hi nahi kaatne ko.", 422)
+    if len(keeps) > 300:
+        return _fail("Video mein bahut zyada chhoti khamoshiyan hain — ye tool is par kaam nahi karega.", 422)
+    has_audio = probe_has_audio(src)
+    fc = []
+    for i, (s, e) in enumerate(keeps):
+        fc.append(f"[0:v]trim=start={s:.3f}:end={e:.3f},setpts=PTS-STARTPTS[v{i}]")
+        if has_audio:
+            fc.append(f"[0:a]atrim=start={s:.3f}:end={e:.3f},asetpts=PTS-STARTPTS[a{i}]")
+    if has_audio:
+        ins = "".join(f"[v{i}][a{i}]" for i in range(len(keeps)))
+        fc.append(f"{ins}concat=n={len(keeps)}:v=1:a=1[vout][aout]")
+        maps = ["-map", "[vout]", "-map", "[aout]"]
+    else:
+        ins = "".join(f"[v{i}]" for i in range(len(keeps)))
+        fc.append(f"{ins}concat=n={len(keeps)}:v=1:a=0[vout]")
+        maps = ["-map", "[vout]"]
+
+    def build(out):
+        return (["ffmpeg", "-y", "-i", src, "-filter_complex", ";".join(fc)]
+                + maps + ENC_ARGS + [out])
+
+    title = _source_title("Video") + " (silence cut)"
+    result, err = _run_ffmpeg_job(session["user_id"], "silencecut", title, build)
+    if cleanup:
+        try:
+            os.remove(src)
+        except OSError:
+            pass
+    if err:
+        return jsonify({"ok": False, "error": f"Silence cut nahi ho saka: {err}"}), 422
+    result["removed_segments"] = len(silences)
+    return jsonify({"ok": True, **result})
+
+
+@app.route("/api/chromakey", methods=["POST"])
+@login_required
+def chromakey():
+    src, cleanup = _resolve_source()
+    if not src:
+        return jsonify({"ok": False, "error": "Video file upload karo ya downloaded file select karo."}), 400
+    key = _hex6(request.form.get("key_color"), "00ff00")
+    try:
+        sim = max(0.1, min(0.5, float(request.form.get("similarity") or 0.25)))
+    except ValueError:
+        sim = 0.25
+    bg_color = _hex6(request.form.get("bg_color"), "0000ff")
+    vw, vh = probe_dims(src)
+    vw, vh = vw or 640, vh or 360
+    bg_path = None
+    bf = request.files.get("bg")
+    if bf and bf.filename:
+        bg_path = _temp_upload(bf, suffix=os.path.splitext(bf.filename)[1] or ".png")
+    if bg_path:
+        inputs = ["-i", src, "-loop", "1", "-framerate", "30", "-i", bg_path]
+        bg_chain = f"[1:v]scale={vw}:{vh}[bgs];"
+    else:
+        inputs = ["-i", src, "-f", "lavfi", "-i",
+                  f"color=c=0x{bg_color}:s={vw}x{vh}:r=30"]
+        bg_chain = ""
+    fc = (bg_chain +
+          f"[0:v]chromakey=0x{key}:{sim:.2f}:0.08[fg];"
+          f"[1:v][fg]overlay=0:0:shortest=1:format=auto,format=yuv420p[vout]")
+
+    def build(out):
+        return (["ffmpeg", "-y"] + inputs +
+                ["-filter_complex", fc, "-map", "[vout]", "-map", "0:a?",
+                 "-shortest"] + ENC_ARGS + [out])
+
+    title = _source_title("Video") + " (green screen)"
+    result, err = _run_ffmpeg_job(session["user_id"], "chromakey", title, build)
+    for p in ([src] if cleanup else []) + ([bg_path] if bg_path else []):
+        try:
+            os.remove(p)
+        except OSError:
+            pass
+    if err:
+        return jsonify({"ok": False, "error": f"Green screen nahi lag saka: {err}"}), 422
+    return jsonify({"ok": True, **result})
+
+# ---------------------------------------------------------------- chhote tools
+
+@app.route("/api/gif", methods=["POST"])
+@login_required
+def make_gif():
+    src, cleanup = _resolve_source()
+    if not src:
+        return jsonify({"ok": False, "error": "Video file upload karo ya downloaded file select karo."}), 400
+
+    def fnum(name, default, lo, hi):
+        try:
+            return max(lo, min(hi, float(request.form.get(name))))
+        except (TypeError, ValueError):
+            return default
+
+    start = fnum("start", 0.0, 0.0, 86400.0)
+    dur = fnum("duration", 3.0, 0.1, 10.0)
+    try:
+        width = int(request.form.get("width") or 480)
+    except ValueError:
+        width = 480
+    if width not in (320, 480):
+        width = 480
+    fc = (f"[0:v]fps=12,scale={width}:-1:flags=lanczos,split[a][b];"
+          "[a]palettegen[p];[b][p]paletteuse")
+
+    def build(out):
+        return ["ffmpeg", "-y", "-ss", str(start), "-i", src, "-t", str(dur),
+                "-filter_complex", fc, "-loop", "0", out]
+
+    result, err = _run_ffmpeg_job(session["user_id"], "gif",
+                                  _source_title("Video") + " (GIF)", build, ext="gif")
+    if cleanup:
+        try:
+            os.remove(src)
+        except OSError:
+            pass
+    if err:
+        return jsonify({"ok": False, "error": f"GIF nahi ban saka: {err}"}), 422
+    return jsonify({"ok": True, **result})
+
+
+@app.route("/api/mp3", methods=["POST"])
+@login_required
+def extract_mp3():
+    src, cleanup = _resolve_source()
+    if not src:
+        return jsonify({"ok": False, "error": "Video file upload karo ya downloaded file select karo."}), 400
+    if not probe_has_audio(src):
+        if cleanup:
+            try:
+                os.remove(src)
+            except OSError:
+                pass
+        return jsonify({"ok": False, "error": "Is video mein audio hi nahi hai."}), 400
+
+    def build(out):
+        return ["ffmpeg", "-y", "-i", src, "-vn", "-c:a", "libmp3lame",
+                "-q:a", "2", out]
+
+    result, err = _run_ffmpeg_job(session["user_id"], "mp3",
+                                  _source_title("Video") + " (MP3)", build, ext="mp3")
+    if cleanup:
+        try:
+            os.remove(src)
+        except OSError:
+            pass
+    if err:
+        return jsonify({"ok": False, "error": f"MP3 nahi ban saka: {err}"}), 422
+    return jsonify({"ok": True, **result})
+
+
+@app.route("/api/compress", methods=["POST"])
+@login_required
+def compress():
+    src, cleanup = _resolve_source()
+    if not src:
+        return jsonify({"ok": False, "error": "Video file upload karo ya downloaded file select karo."}), 400
+    q = (request.form.get("quality") or "medium").strip()
+    crf = {"high": "24", "medium": "28", "small": "33"}.get(q, "28")
+
+    def build(out):
+        return ["ffmpeg", "-y", "-i", src, "-c:v", "libx264", "-preset",
+                "veryfast", "-crf", crf, "-c:a", "aac", "-b:a", "128k",
+                "-movflags", "+faststart", out]
+
+    result, err = _run_ffmpeg_job(session["user_id"], "compress",
+                                  _source_title("Video") + " (compressed)", build)
+    if cleanup:
+        try:
+            os.remove(src)
+        except OSError:
+            pass
+    if err:
+        return jsonify({"ok": False, "error": f"Compress nahi ho saka: {err}"}), 422
+    return jsonify({"ok": True, **result})
+
+
+@app.route("/api/thumbnail", methods=["POST"])
+@login_required
+def thumbnail():
+    src, cleanup = _resolve_source()
+    if not src:
+        return jsonify({"ok": False, "error": "Video file upload karo ya downloaded file select karo."}), 400
+    try:
+        t = max(0.0, float(request.form.get("time") or 1))
+    except ValueError:
+        t = 1.0
+
+    def build(out):
+        return ["ffmpeg", "-y", "-ss", str(t), "-i", src,
+                "-frames:v", "1", "-q:v", "3", out]
+
+    result, err = _run_ffmpeg_job(session["user_id"], "thumbnail",
+                                  _source_title("Video") + " (thumbnail)",
+                                  build, ext="jpg")
+    if cleanup:
+        try:
+            os.remove(src)
+        except OSError:
+            pass
+    if err:
+        return jsonify({"ok": False, "error": f"Thumbnail nahi ban saka: {err}"}), 422
+    return jsonify({"ok": True, **result})
 
 # ---------------------------------------------------------------- misc
 
