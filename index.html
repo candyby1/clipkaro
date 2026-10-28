@@ -133,6 +133,15 @@
         <button class="primary" id="bulkBtn" onclick="startBulk()">⬇ Download Selected</button>
       </div>
       <div id="bulkProgress"></div>
+      <h3 class="section">📋 Kai Links Ek Saath (Multi-Link)</h3>
+      <p style="color:#9aa3c7;font-size:13.5px;line-height:1.6">Alag alag videos ke links hain? Neeche paste kar do — sab ek saath bulk download ho jayenge, progress upar wale hisse mein dikhega.</p>
+      <label>Kai links ek saath — har line par ek link paste karein</label>
+      <textarea id="multiLinks" placeholder="https://www.facebook.com/watch/?v=...&#10;https://www.youtube.com/watch?v=..."></textarea>
+      <label class="check"><input type="checkbox" id="multiUseCookies" checked> Facebook login cookies use karo (agar upload ki hui hain)</label>
+      <div class="row" style="margin-top:12px">
+        <button class="primary" id="multiBtn" onclick="startMultiBulk()" style="width:100%">⬇ Sab Download Karein</button>
+      </div>
+      <div class="status" id="multiStatus"></div>
       <h3 class="section">🍪 Facebook Cookies (optional)</h3>
       <p style="color:#9aa3c7;font-size:13.5px;line-height:1.6">Facebook aksar Page ki video list ke liye login maangta hai. Apne browser se <b>cookies.txt</b> (Netscape format, "Get cookies.txt" extension se) nikaal kar yahan upload karo — file sirf hamare server par rehti hai, kahin share nahi hoti.</p>
       <div class="row" style="margin-top:10px">
@@ -185,13 +194,13 @@
     <div id="tab-upload" class="card hidden">
       <div id="fbSetup" class="note hidden"></div>
       <div id="fbLoginArea">
-        <p style="color:#9aa3c7;font-size:15px;margin-bottom:14px">Apne Facebook account se login karein, Page select karein, video upload karein — seedha aapke Page par.</p>
+        <p style="color:#9aa3c7;font-size:15px;margin-bottom:14px">Apne Facebook account se login karein, Pages select karein, video upload karein — ek hi video ek saath kai Pages par lag jayegi.</p>
         <button class="primary" id="fbBtn" onclick="fbLogin()" style="width:100%">🔵 Login with Facebook</button>
       </div>
       <div id="fbUploadArea" class="hidden">
         <div class="status ok" id="fbUser"></div>
-        <label>Select Page</label>
-        <select id="pageSelect"></select>
+        <label>Select Pages — jin Pages par upload karna hai, unhen check karein</label>
+        <div id="pageList"></div>
         <label>Video file</label>
         <input type="file" id="videoFile" accept="video/*" onchange="applyCaptionTemplate()">
         <label>📝 Caption Template — {title} ki jagah video ka naam khud aa jayega</label>
@@ -203,9 +212,10 @@
         <label>Description</label>
         <textarea id="upDesc" placeholder="Description (optional)"></textarea>
         <div class="row" style="margin-top:16px">
-          <button class="primary" id="upBtn" onclick="uploadToFB()" style="width:100%">📤 Upload to Facebook Page</button>
+          <button class="primary" id="upBtn" onclick="uploadToFB()" style="width:100%">📤 Upload to Selected Pages</button>
         </div>
         <div class="progress" id="upProgress"><div></div></div>
+        <div id="upPageResults"></div>
       </div>
       <div class="status" id="upStatus"></div>
       <div class="note">🔒 Aapka Facebook login sirf aapke browser mein rehta hai — password hamare server par kabhi nahi aata. Upload seedha Facebook ke server par hota hai.</div>
@@ -427,6 +437,25 @@ async function startBulk() {
   } catch(e) { setStatus('grabStatus', '❌ Server se rabta nahi ho saka.', 'err'); btn.disabled = false; }
 }
 
+async function startMultiBulk() {
+  const seen = new Set();
+  const urls = [];
+  document.getElementById('multiLinks').value.split('\n').forEach(line => {
+    const u = line.trim();
+    if (/^https?:\/\//i.test(u) && !seen.has(u)) { seen.add(u); urls.push(u); }
+  });
+  if (!urls.length) { setStatus('multiStatus', 'Koi sahi link nahi mila — har line par ek http/https link paste karein.', 'err'); return; }
+  const btn = document.getElementById('multiBtn'); btn.disabled = true;
+  setStatus('multiStatus', '⬇ ' + urls.length + ' links ka bulk download shuru ho gaya…', 'info');
+  try {
+    const r = await api('/api/bulk-download', jsonOpts({urls, use_cookies: document.getElementById('multiUseCookies').checked}));
+    const d = await r.json();
+    if (!d.ok) { setStatus('multiStatus', '❌ ' + d.error, 'err'); btn.disabled = false; return; }
+    setStatus('multiStatus', '✅ Job shuru: ' + urls.length + ' videos — progress upar dikh raha hai.', 'ok');
+    pollJob(d.job_id, btn);
+  } catch(e) { setStatus('multiStatus', '❌ Server se rabta nahi ho saka.', 'err'); btn.disabled = false; }
+}
+
 function renderJobItems(el, job) {
   el.innerHTML = '';
   (job.items || []).forEach(it => {
@@ -582,7 +611,6 @@ function applyCaptionTemplate() {
     desc.value = (base ? base + '\n\n' : '') + tags;
   }
 }
-let pageToken = '', pageId = '';
 window.fbAsyncInit = function() {
   if (!CONFIG.FB_APP_ID || CONFIG.FB_APP_ID.includes('PASTE_YOUR')) {
     const s = document.getElementById('fbSetup');
@@ -605,53 +633,89 @@ function fbLogin() {
       document.getElementById('fbUser').textContent = '✅ Logged in: ' + me.name;
     });
     FB.api('/me/accounts', function(r) {
-      const sel = document.getElementById('pageSelect'); sel.innerHTML = '';
+      const box = document.getElementById('pageList'); box.innerHTML = '';
       (r.data || []).forEach(p => {
-        const o = document.createElement('option');
-        o.value = p.id + '|' + p.access_token;
-        o.textContent = p.name;
-        sel.appendChild(o);
+        const lab = document.createElement('label');
+        lab.className = 'check';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.className = 'page-check';
+        cb.value = p.id + '|' + p.access_token;
+        cb.dataset.name = p.name;
+        const sp = document.createElement('span');
+        sp.textContent = p.name;
+        lab.appendChild(cb); lab.appendChild(sp);
+        box.appendChild(lab);
       });
       if (!r.data || !r.data.length) { setStatus('upStatus', 'Koi Facebook Page nahi mila. Pehle aik Page banao.', 'err'); return; }
       document.getElementById('fbLoginArea').classList.add('hidden');
       document.getElementById('fbUploadArea').classList.remove('hidden');
-      setStatus('upStatus', 'Page select karo aur video upload karo.', 'info');
+      setStatus('upStatus', 'Pages check karo aur video upload karo — video har checked Page par jayegi.', 'info');
     });
   }, {scope: 'pages_manage_posts,pages_read_engagement'});
 }
 
-function uploadToFB() {
-  const sel = document.getElementById('pageSelect').value;
+function uploadVideoToPage(pgId, pgToken, file, title, desc, onProgress) {
+  return new Promise(function(resolve, reject) {
+    const fd = new FormData();
+    fd.append('access_token', pgToken);
+    fd.append('title', title);
+    fd.append('description', desc);
+    fd.append('file', file);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', 'https://graph.facebook.com/v21.0/' + pgId + '/videos');
+    xhr.upload.onprogress = function(e) {
+      if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
+    };
+    xhr.onload = function() {
+      try {
+        const d = JSON.parse(xhr.responseText);
+        if (d.id) resolve(d.id);
+        else reject(new Error(d.error ? d.error.message : 'Upload fail'));
+      } catch(e) { reject(new Error('Jawab samajh nahi aaya.')); }
+    };
+    xhr.onerror = function() { reject(new Error('Network error.')); };
+    xhr.send(fd);
+  });
+}
+
+async function uploadToFB() {
   const file = document.getElementById('videoFile').files[0];
   if (!file) { setStatus('upStatus', 'Pehle video file select karo.', 'err'); return; }
-  const parts = sel.split('|'); pageId = parts[0]; pageToken = parts[1];
+  const checked = Array.from(document.querySelectorAll('.page-check:checked'));
+  if (!checked.length) { setStatus('upStatus', 'Kam az kam ek Page check karein — bina Page ke upload nahi ho sakta.', 'err'); return; }
+  const title = document.getElementById('upTitle').value || file.name;
+  const desc = document.getElementById('upDesc').value || '';
   const btn = document.getElementById('upBtn'); btn.disabled = true;
-  setStatus('upStatus', '📤 Upload ho raha hai… (bari file mein waqt lag sakta hai)', 'info');
+  const results = document.getElementById('upPageResults'); results.innerHTML = '';
   const bar = document.getElementById('upProgress');
-  bar.style.display = 'block'; bar.firstElementChild.style.width = '30%';
-
-  const fd = new FormData();
-  fd.append('access_token', pageToken);
-  fd.append('title', document.getElementById('upTitle').value || file.name);
-  fd.append('description', document.getElementById('upDesc').value || '');
-  fd.append('file', file);
-
-  const xhr = new XMLHttpRequest();
-  xhr.open('POST', 'https://graph.facebook.com/v21.0/' + pageId + '/videos');
-  xhr.upload.onprogress = function(e) {
-    if (e.lengthComputable) bar.firstElementChild.style.width = Math.round(e.loaded/e.total*100) + '%';
-  };
-  xhr.onload = function() {
-    btn.disabled = false;
+  bar.style.display = 'block'; bar.firstElementChild.style.width = '0%';
+  setStatus('upStatus', '📤 ' + checked.length + ' Pages par upload ho raha hai… (bari file mein waqt lag sakta hai)', 'info');
+  let doneCount = 0, okCount = 0;
+  for (const cb of checked) {
+    const parts = cb.value.split('|');
+    const line = document.createElement('div');
+    line.className = 'job-item';
+    line.innerHTML = '<span class="pu-name"></span><span class="badge downloading">uploading…</span>';
+    line.querySelector('.pu-name').textContent = cb.dataset.name || 'Page';
+    results.appendChild(line);
+    const badge = line.querySelector('.badge');
     try {
-      const d = JSON.parse(xhr.responseText);
-      if (d.id) { setStatus('upStatus', '✅ Upload ho gaya! Video ID: ' + d.id + ' — Page par processing mein hai.', 'ok'); }
-      else { setStatus('upStatus', '❌ ' + (d.error ? d.error.message : 'Upload fail'), 'err'); }
-    } catch(e) { setStatus('upStatus', '❌ Jawab samajh nahi aaya.', 'err'); }
-    setTimeout(() => bar.style.display = 'none', 1500);
-  };
-  xhr.onerror = function() { btn.disabled = false; setStatus('upStatus', '❌ Network error.', 'err'); };
-  xhr.send(fd);
+      const vid = await uploadVideoToPage(parts[0], parts[1], file, title, desc, function(frac) {
+        bar.firstElementChild.style.width = Math.round(((doneCount + frac) / checked.length) * 100) + '%';
+      });
+      badge.className = 'badge done';
+      badge.textContent = '✅ done — Video ID: ' + vid;
+      okCount++;
+    } catch(e) {
+      badge.className = 'badge error';
+      badge.textContent = '❌ ' + e.message;
+    }
+    doneCount++;
+    bar.firstElementChild.style.width = Math.round(doneCount / checked.length * 100) + '%';
+  }
+  btn.disabled = false;
+  setStatus('upStatus', '📤 Upload khatam: ' + okCount + ' / ' + checked.length + ' Pages par ho gaya. Har Page ka result upar diya hai.', okCount ? 'ok' : 'err');
+  setTimeout(() => bar.style.display = 'none', 1500);
 }
 
 checkSession();
