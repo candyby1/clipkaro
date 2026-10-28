@@ -755,6 +755,24 @@
         <div class="status" id="adminStatus"></div>
         <h3 class="section">👥 Admin — Users &amp; Plans</h3>
         <div id="adminUsers" style="overflow-x:auto"></div>
+        <h3 class="section">🔑 Activation Code Generator (Desktop Software)</h3>
+        <p style="color:#9aa3c7;font-size:14px">Client ke software mein jo <b>Machine ID</b> nazar aye, wo yahan likhein — usi PC ke liye activation code ban jayega.</p>
+        <label>Client ki Machine ID</label>
+        <input type="text" id="genMachineId" placeholder="CK-XXXX-XXXX" style="text-transform:uppercase">
+        <label>Plan</label>
+        <select id="genPlan">
+          <option value="monthly">Monthly (30 din)</option>
+          <option value="lifetime">Lifetime</option>
+        </select>
+        <div class="row" style="margin-top:16px">
+          <button class="primary" onclick="doGenCode()">Code Banayein</button>
+        </div>
+        <div id="genCodeBox" class="hidden" style="margin-top:14px;text-align:center">
+          <div style="color:#9aa3c7;font-size:13px">Activation Code:</div>
+          <div id="genCodeText" style="font-size:26px;font-weight:bold;letter-spacing:2px;user-select:all;margin:6px 0"></div>
+          <button class="ghost" onclick="copyGenCode()">📋 Copy Karein</button>
+        </div>
+        <div class="status" id="genStatus"></div>
       </div>
     </div>
   </div>
@@ -1917,6 +1935,29 @@ async function adminDecide(id, action) {
       loadAdmin(); loadPlanStatus();
     } else setStatus('adminStatus', '❌ ' + (d.error || 'Fail ho gaya.'), 'err');
   } catch(e) { setStatus('adminStatus', '❌ Network error.', 'err'); }
+}
+
+/* ---------- ADMIN: activation code generator (desktop software) ---------- */
+async function doGenCode() {
+  const mid = document.getElementById('genMachineId').value.trim();
+  const plan = document.getElementById('genPlan').value;
+  if (!mid) { setStatus('genStatus', 'Pehle client ki Machine ID likhein.', 'err'); return; }
+  setStatus('genStatus', 'Code ban raha hai…', 'info');
+  try {
+    const r = await api('/api/admin/gen-code', jsonOpts({machine_id: mid, plan}));
+    const d = await r.json();
+    if (d.ok) {
+      document.getElementById('genCodeText').textContent = d.code;
+      document.getElementById('genCodeBox').classList.remove('hidden');
+      setStatus('genStatus', '✅ Code tayyar hai — client ko bhej dein.', 'ok');
+    } else setStatus('genStatus', '❌ ' + (d.error || 'Code nahi ban saka.'), 'err');
+  } catch(e) { setStatus('genStatus', '❌ Network error.', 'err'); }
+}
+
+function copyGenCode() {
+  const t = document.getElementById('genCodeText').textContent;
+  if (navigator.clipboard) navigator.clipboard.writeText(t);
+  setStatus('genStatus', '📋 Code copy ho gaya.', 'ok');
 }
 
 checkSession();

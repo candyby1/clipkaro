@@ -318,6 +318,47 @@ def change_password():
 
 
 
+# ---------------------------------------------------------------- activation codes (desktop licensing)
+# Desktop software ke trial/activation system ke code. Har code aik khaas
+# PC (Machine ID) se bandha hota hai: prefix + HMAC-SHA256 signature.
+#   Monthly  : "CK30-XXXXX-XXXXX"  (activate hone ke baad 30 din valid)
+#   Lifetime : "CKL-XXXXX-XXXXX"   (kabhi expire nahi hota)
+# Website par code ACTIVATION_SECRET env var se banta hai — secret website
+# ke code mein KABHI nahi likha jata (repo public hai). Wahi secret desktop
+# app ke andar constant ke tor par embedded hai taake wahan code OFFLINE
+# verify ho sake (neeche desktop licensing section dekhein).
+import base64
+import hashlib
+import hmac as _hmac
+
+LICENSE_PLAN_PREFIX = {"monthly": "CK30-", "lifetime": "CKL-"}
+
+
+def _activation_signature(secret, machine_id, plan):
+    mac = _hmac.new(str(secret).encode(),
+                    (str(machine_id).strip().upper() + "|" + plan).encode(),
+                    hashlib.sha256).digest()
+    return base64.b32encode(mac).decode("ascii").rstrip("=")[:10]
+
+
+def make_activation_code(secret, machine_id, plan):
+    """Diye gaye Machine ID + plan ke liye activation code banao."""
+    sig = _activation_signature(secret, machine_id, plan)
+    return LICENSE_PLAN_PREFIX[plan] + sig[:5] + "-" + sig[5:]
+
+
+def verify_activation_code(secret, machine_id, code):
+    """Code is machine ke liye sahi ho to plan ('monthly'/'lifetime'), warna None."""
+    if not secret or not code:
+        return None
+    c = str(code).strip().upper().replace(" ", "")
+    for plan, prefix in LICENSE_PLAN_PREFIX.items():
+        if c.startswith(prefix):
+            expected = make_activation_code(secret, machine_id, plan)
+            return plan if _hmac.compare_digest(c, expected) else None
+    return None
+
+
 # ---------------------------------------------------------------- plans API
 
 def _plan_status_dict(user):
@@ -487,6 +528,32 @@ def admin_payment_reject(pid):
                  "WHERE id = ?", (int(time.time()), pid))
     db().commit()
     return jsonify({"ok": True, "message": "Payment reject kar di gayi hai."})
+
+
+@app.route("/api/admin/gen-code", methods=["POST"])
+@login_required
+def admin_gen_code():
+    """Desktop software ke liye activation code banao (sirf admin).
+    Secret ACTIVATION_SECRET env var se aata hai — code mein kabhi nahi."""
+    _, err = _require_admin()
+    if err:
+        return err
+    secret = os.environ.get("ACTIVATION_SECRET")
+    if not secret:
+        return jsonify({"ok": False,
+                        "error": "Activation system abhi configured nahi hai — "
+                                 "server par ACTIVATION_SECRET set nahi hai."}), 503
+    data = request.get_json(force=True, silent=True) or {}
+    machine_id = (data.get("machine_id") or "").strip()
+    plan = (data.get("plan") or "").strip().lower()
+    if not machine_id:
+        return jsonify({"ok": False, "error": "Machine ID likhein."}), 400
+    if plan not in LICENSE_PLAN_PREFIX:
+        return jsonify({"ok": False,
+                        "error": "Plan ghalat hai — Monthly ya Lifetime chunein."}), 400
+    code = make_activation_code(secret, machine_id, plan)
+    return jsonify({"ok": True, "code": code, "plan": plan,
+                    "machine_id": machine_id})
 
 
 @app.route("/payments/<name>")
