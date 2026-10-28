@@ -520,6 +520,49 @@ def _run_ffmpeg_job(user_id, jtype, title, cmd_for_out, ext="mp4"):
 def index():
     return send_from_directory(BASE_DIR, "index.html")
 
+
+_PAGE_STYLE = ("<style>body{font-family:sans-serif;background:#0f1220;color:#eef1ff;"
+               "max-width:760px;margin:0 auto;padding:32px 20px;line-height:1.65}"
+               "h1{font-size:24px}h2{font-size:17px;margin-top:26px}a{color:#6c8cff}</style>")
+
+
+@app.route("/privacy")
+def privacy():
+    return (_PAGE_STYLE +
+            "<h1>ClipKaro — Privacy Policy</h1>"
+            "<p>ClipKaro is an online tool to download, edit and upload videos. "
+            "This page explains what information the service handles.</p>"
+            "<h2>Accounts</h2><p>To use the tools you create an account with a username and a "
+            "password. Passwords are stored only as a secure hash — never in plain text.</p>"
+            "<h2>Your files</h2><p>Videos and files you process are stored temporarily so you can "
+            "download the results of your jobs. Each account can only see its own jobs and files. "
+            "Files may be removed when the service restarts or storage is cleared.</p>"
+            "<h2>Connected accounts (Facebook / TikTok)</h2><p>If you connect a Facebook or TikTok "
+            "account, ClipKaro uses the permission you approve only to list your Pages/accounts and "
+            "to upload the videos you choose. ClipKaro never asks for or stores your Facebook or "
+            "TikTok password.</p>"
+            "<h2>What we do not do</h2><p>We do not sell your personal information. We do not post "
+            "anything to your accounts without your action in the tool.</p>"
+            "<h2>Contact</h2><p>For any privacy question, contact the site owner through the "
+            "ClipKaro website.</p><p><a href='/'>Back to ClipKaro</a></p>")
+
+
+@app.route("/terms")
+def terms():
+    return (_PAGE_STYLE +
+            "<h1>ClipKaro — Terms of Service</h1>"
+            "<h2>Using the tool</h2><p>ClipKaro provides video downloading, editing and uploading "
+            "tools. You are responsible for the videos you download, edit and upload, and for having "
+            "the rights or permission to use them. Do not use the tool for content you do not own or "
+            "have permission for.</p>"
+            "<h2>Accounts</h2><p>Keep your account password safe. Accounts are personal; the site "
+            "owner may suspend accounts that misuse the service.</p>"
+            "<h2>Availability</h2><p>The service is provided as-is, without a guarantee of uptime. "
+            "Features may change or be removed at any time.</p>"
+            "<h2>Uploads to other platforms</h2><p>When you upload through ClipKaro to Facebook or "
+            "TikTok, those platforms' own terms also apply to your content.</p>"
+            "<p><a href='/'>Back to ClipKaro</a></p>")
+
 # ---------------------------------------------------------------- single video
 
 @app.route("/api/info", methods=["POST"])
