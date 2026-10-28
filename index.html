@@ -388,6 +388,29 @@
       </div>
       <div class="status" id="upStatus"></div>
       <div class="note">🔒 Aapka Facebook login sirf aapke browser mein rehta hai — password hamare server par kabhi nahi aata. Upload seedha Facebook ke server par hota hai.</div>
+
+      <h3 class="section">🎵 TikTok Upload</h3>
+      <p style="color:#9aa3c7;font-size:15px;margin-bottom:6px">Apna TikTok account connect karein aur video seedha TikTok par bhejein.</p>
+      <div class="status info" id="ttStatusLine">TikTok status check ho raha hai…</div>
+      <div id="ttConnectArea">
+        <div class="row" style="margin-top:10px">
+          <button class="primary" id="ttConnectBtn" onclick="tiktokConnect()" style="width:100%">🎵 TikTok Connect Karo</button>
+        </div>
+      </div>
+      <div id="ttUploadArea" class="hidden">
+        <div class="row" style="margin-top:10px">
+          <button class="ghost" onclick="tiktokDisconnect()">🔌 TikTok Disconnect</button>
+        </div>
+        <label>Video file</label>
+        <input type="file" id="ttFile" accept="video/*">
+        <label>Title</label>
+        <input type="text" id="ttTitle" placeholder="Video title">
+        <div class="row" style="margin-top:16px">
+          <button class="primary" id="ttBtn" onclick="uploadToTikTok()" style="width:100%">🎵 TikTok par Bhejo</button>
+        </div>
+      </div>
+      <div class="status" id="ttStatus"></div>
+      <div class="note">Note: Abhi video aap ke TikTok par sirf aap ko dikhay gi (SELF_ONLY) / inbox draft mein jayegi — TikTok ke audit ke baad public post hoga.</div>
     </div>
 
     <!-- JOBS TAB -->
@@ -684,7 +707,7 @@ function showMain(username) {
   window.CK_USER = username;
   const ov = document.getElementById('ovText');
   if (ov && !ov.value) ov.value = username;
-  checkCookies(); checkCaptions(); loadJobs(); refreshClipFiles();
+  checkCookies(); checkCaptions(); loadJobs(); refreshClipFiles(); loadTikTokStatus();
 }
 async function doAuth() {
   const username = document.getElementById('authUser').value.trim();
@@ -738,6 +761,7 @@ function showTab(t, btn) {
   ['download','grab','clip','subs','upload','jobs','profiles','dash','voice','editor'].forEach(x =>
     document.getElementById('tab-' + x).classList.toggle('hidden', x !== t));
   if (t === 'jobs') loadJobs();
+  if (t === 'upload') loadTikTokStatus();
   if (t === 'clip' || t === 'voice' || t === 'editor') refreshClipFiles();
   if (t === 'profiles') loadProfiles();
   if (t === 'dash') loadStats();
@@ -1163,6 +1187,71 @@ async function uploadToFB() {
   btn.disabled = false;
   setStatus('upStatus', '📤 Upload khatam: ' + okCount + ' / ' + checked.length + ' Pages par ho gaya. Har Page ka result upar diya hai.', okCount ? 'ok' : 'err');
   setTimeout(() => bar.style.display = 'none', 1500);
+}
+
+/* ---------- TIKTOK UPLOAD (server-side OAuth + Content Posting API) ---------- */
+async function loadTikTokStatus() {
+  const line = document.getElementById('ttStatusLine');
+  if (!line) return;
+  try {
+    const r = await fetch('/api/tiktok/status');
+    const d = await r.json();
+    if (!d.ok) return;
+    const connectArea = document.getElementById('ttConnectArea');
+    const uploadArea = document.getElementById('ttUploadArea');
+    if (!d.configured) {
+      line.className = 'status info';
+      line.textContent = '⚙️ TikTok abhi configure nahi hua — server par Client Key set hona baki hai.';
+      connectArea.classList.remove('hidden');
+      uploadArea.classList.add('hidden');
+      return;
+    }
+    if (d.connected) {
+      line.className = 'status ok';
+      line.textContent = '✅ TikTok connected' + (d.name ? ': ' + d.name : '');
+      connectArea.classList.add('hidden');
+      uploadArea.classList.remove('hidden');
+    } else {
+      line.className = 'status info';
+      line.textContent = 'TikTok account connected nahi hai — pehle connect karo.';
+      connectArea.classList.remove('hidden');
+      uploadArea.classList.add('hidden');
+    }
+  } catch(e) {}
+}
+async function tiktokConnect() {
+  setStatus('ttStatus', 'TikTok login page khul raha hai…', 'info');
+  try {
+    const r = await api('/api/tiktok/auth-url');
+    const d = await r.json();
+    if (!d.ok || !d.url) { setStatus('ttStatus', '❌ ' + (d.error || 'Auth URL nahi mila.'), 'err'); return; }
+    window.location.href = d.url;
+  } catch(e) { setStatus('ttStatus', '❌ Server se rabta nahi ho saka.', 'err'); }
+}
+async function tiktokDisconnect() {
+  try {
+    await api('/api/tiktok/disconnect', { method: 'POST' });
+    setStatus('ttStatus', 'TikTok disconnect ho gaya.', 'info');
+    loadTikTokStatus();
+  } catch(e) { setStatus('ttStatus', '❌ Disconnect fail ho gaya.', 'err'); }
+}
+async function uploadToTikTok() {
+  const f = document.getElementById('ttFile').files[0];
+  if (!f) { setStatus('ttStatus', 'Pehle video file select karo.', 'err'); return; }
+  if (f.size > 64 * 1024 * 1024) { setStatus('ttStatus', '❌ Video 64 MB se bari hai — pehle Compress tool se chhoti kar lo.', 'err'); return; }
+  const fd = new FormData();
+  fd.append('file', f);
+  fd.append('title', document.getElementById('ttTitle').value.trim());
+  const btn = document.getElementById('ttBtn'); btn.disabled = true;
+  setStatus('ttStatus', '🎵 TikTok par upload ho raha hai… bari file mein waqt lag sakta hai.', 'info');
+  try {
+    const r = await api('/api/tiktok/upload', { method: 'POST', body: fd });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) throw new Error(d.error || 'Upload fail ho gaya');
+    if (d.mode === 'inbox') setStatus('ttStatus', '✅ Ho gaya! Video aapke TikTok inbox mein draft ban kar gayi hai — TikTok app mein ja kar post kar dein. (Publish ID: ' + (d.publish_id || '-') + ')', 'ok');
+    else setStatus('ttStatus', '✅ Ho gaya! Video TikTok par post ho gayi — abhi sirf aap ko dikhay gi (SELF_ONLY). (Publish ID: ' + (d.publish_id || '-') + ')', 'ok');
+  } catch(e) { setStatus('ttStatus', '❌ ' + e.message, 'err'); }
+  btn.disabled = false;
 }
 
 /* ---------- SHARED: source (upload ya job file) ---------- */

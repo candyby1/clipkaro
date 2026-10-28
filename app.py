@@ -12,6 +12,8 @@ Features:
   - Subtitles — auto captions (faster-whisper, agar available ho)
                + apni .srt file video par burn karna (style options ke sath)
   - Facebook Page upload (browser mein, Facebook Login se)
+  - TikTok Upload — TikTok account connect kar ke video post (SELF_ONLY)
+    ya inbox draft (Content Posting API, OAuth server-side)
   - Profiles — Pages/channels save karo, CSV import/export
   - Output format — downloads ko 9:16 / 16:9 mein convert + pehle N sec trim
   - Video Effects — brightness/contrast/saturation, flip, rotate, crop
@@ -31,6 +33,7 @@ import re
 import csv
 import io
 import json
+import time
 import uuid
 import shutil
 import sqlite3
@@ -39,13 +42,18 @@ import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlencode
 
 from flask import (Flask, request, jsonify, send_file, send_from_directory,
-                   session, g)
+                   session, g, redirect)
 from werkzeug.security import generate_password_hash, check_password_hash
 
 import yt_dlp
+
+try:
+    import requests
+except Exception:  # requests na ho to TikTok features band, app phir bhi chalegi
+    requests = None
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 
@@ -84,6 +92,16 @@ app.config.update(
 
 URL_RE = re.compile(r"^https?://", re.IGNORECASE)
 SAFE_NAME_RE = re.compile(r'[\\/*?:"<>|]')
+
+# ---------------------------------------------------------------- TikTok config
+# Client Key deploy ke waqt yahan bhara jata hai (placeholder khali hai);
+# Secret hamesha env se aata hai — code mein kabhi hardcode nahi hota.
+TIKTOK_CLIENT_KEY = "awuo8ngjthqd25g2"
+TIKTOK_CLIENT_SECRET = os.environ.get("TIKTOK_CLIENT_SECRET", "")
+TIKTOK_REDIRECT_URI = "https://clipkaro-yfbq.onrender.com/tiktok/callback"
+TIKTOK_SCOPES = "user.info.basic,video.upload,video.publish"
+TIKTOK_API_BASE = "https://open.tiktokapis.com/v2"
+TIKTOK_MAX_UPLOAD = 64 * 1024 * 1024  # single-chunk upload ki had: 64 MB
 
 # ---------------------------------------------------------------- DB / auth
 
@@ -137,7 +155,20 @@ def init_db():
             downloads INTEGER NOT NULL DEFAULT 0,
             bytes INTEGER NOT NULL DEFAULT 0
         );
+        CREATE TABLE IF NOT EXISTS tiktok_tokens (
+            user_id INTEGER PRIMARY KEY,
+            open_id TEXT,
+            access_token TEXT,
+            refresh_token TEXT,
+            expires_at INTEGER,
+            scope TEXT
+        );
     """)
+    # purani stats table mein tiktok_uploads column na ho to add kar do
+    _cols = [r[1] for r in conn.execute("PRAGMA table_info(stats)").fetchall()]
+    if "tiktok_uploads" not in _cols:
+        conn.execute("ALTER TABLE stats ADD COLUMN tiktok_uploads "
+                     "INTEGER NOT NULL DEFAULT 0")
     conn.commit()
     conn.close()
 
@@ -382,16 +413,17 @@ def human_size(n):
         n /= 1024.0
 
 
-def bump_stats(user_id, downloads=0, nbytes=0):
-    """Lifetime download counters (thread-safe — apna connection)."""
-    if not downloads and not nbytes:
+def bump_stats(user_id, downloads=0, nbytes=0, tiktok_uploads=0):
+    """Lifetime counters (thread-safe — apna connection)."""
+    if not downloads and not nbytes and not tiktok_uploads:
         return
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
-        "INSERT INTO stats (user_id, downloads, bytes) VALUES (?, ?, ?) "
+        "INSERT INTO stats (user_id, downloads, bytes, tiktok_uploads) VALUES (?, ?, ?, ?) "
         "ON CONFLICT(user_id) DO UPDATE SET "
-        "downloads = downloads + excluded.downloads, bytes = bytes + excluded.bytes",
-        (user_id, downloads, nbytes))
+        "downloads = downloads + excluded.downloads, bytes = bytes + excluded.bytes, "
+        "tiktok_uploads = tiktok_uploads + excluded.tiktok_uploads",
+        (user_id, downloads, nbytes, tiktok_uploads))
     conn.commit()
     conn.close()
 
@@ -1580,10 +1612,11 @@ def stats():
     uid = session["user_id"]
     total_jobs = db().execute("SELECT COUNT(*) AS c FROM jobs WHERE user_id = ?",
                               (uid,)).fetchone()["c"]
-    srow = db().execute("SELECT downloads, bytes FROM stats WHERE user_id = ?",
+    srow = db().execute("SELECT downloads, bytes, tiktok_uploads FROM stats WHERE user_id = ?",
                         (uid,)).fetchone()
     downloads = srow["downloads"] if srow else 0
     nbytes = srow["bytes"] if srow else 0
+    tiktok_uploads = srow["tiktok_uploads"] if srow else 0
     by_type = {}
     for r in db().execute("SELECT type, COUNT(*) AS c FROM jobs WHERE user_id = ? GROUP BY type",
                           (uid,)).fetchall():
@@ -1605,7 +1638,8 @@ def stats():
     top_sources = [{"source": k, "count": v} for k, v in
                    sorted(domains.items(), key=lambda kv: -kv[1])[:8]]
     return jsonify({"ok": True, "total_jobs": total_jobs,
-                    "downloads": downloads, "downloaded_bytes": nbytes,
+                    "downloads": downloads, "tiktok_uploads": tiktok_uploads,
+                    "downloaded_bytes": nbytes,
                     "downloaded_human": human_size(nbytes),
                     "failed": failed, "by_type": by_type,
                     "top_sources": top_sources})
@@ -2286,6 +2320,246 @@ def thumbnail():
     if err:
         return jsonify({"ok": False, "error": f"Thumbnail nahi ban saka: {err}"}), 422
     return jsonify({"ok": True, **result})
+
+# ---------------------------------------------------------------- tiktok upload
+
+def tiktok_tokens_for(user_id):
+    """User ka TikTok token row (dict) ya None. Expired ho to refresh token se
+    naya access token le kar save kar do; refresh fail ho to None
+    (disconnect samjho)."""
+    row = db().execute("SELECT * FROM tiktok_tokens WHERE user_id = ?",
+                       (user_id,)).fetchone()
+    if not row:
+        return None
+    tok = dict(row)
+    exp = tok.get("expires_at") or 0
+    if exp and exp <= int(time.time()) + 60 and tok.get("refresh_token"):
+        if requests is None or not TIKTOK_CLIENT_KEY or not TIKTOK_CLIENT_SECRET:
+            return None
+        try:
+            r = requests.post(f"{TIKTOK_API_BASE}/oauth/token/", data={
+                "client_key": TIKTOK_CLIENT_KEY,
+                "client_secret": TIKTOK_CLIENT_SECRET,
+                "grant_type": "refresh_token",
+                "refresh_token": tok["refresh_token"],
+            }, timeout=30)
+            d = r.json()
+        except Exception:
+            return None
+        if not isinstance(d, dict) or not d.get("access_token"):
+            return None
+        tok.update({
+            "access_token": d["access_token"],
+            "refresh_token": d.get("refresh_token") or tok["refresh_token"],
+            "open_id": d.get("open_id") or tok.get("open_id"),
+            "scope": d.get("scope") or tok.get("scope"),
+            "expires_at": int(time.time()) + int(d.get("expires_in") or 0),
+        })
+        db().execute(
+            "UPDATE tiktok_tokens SET open_id = ?, access_token = ?, "
+            "refresh_token = ?, expires_at = ?, scope = ? WHERE user_id = ?",
+            (tok["open_id"], tok["access_token"], tok["refresh_token"],
+             tok["expires_at"], tok["scope"], user_id))
+        db().commit()
+    return tok
+
+
+def _tiktok_error_text(resp):
+    """TikTok API ke jawab se error ka text — error.message / code, ya
+    OAuth wale error_description, warna HTTP status."""
+    try:
+        d = resp.json()
+    except Exception:
+        return f"TikTok se jawab nahi aaya (HTTP {resp.status_code})."
+    if isinstance(d, dict):
+        err = d.get("error")
+        if isinstance(err, dict):
+            return (err.get("message") or err.get("code")
+                    or f"TikTok error (HTTP {resp.status_code}).")
+        if isinstance(err, str) and err:
+            return d.get("error_description") or err
+        if d.get("error_description"):
+            return d["error_description"]
+    return f"TikTok error (HTTP {resp.status_code})."
+
+
+def _tiktok_ok(resp):
+    """Content Posting API ke jawab mein error.code == 'ok' matlab success.
+    (ok, parsed_json) return karta hai."""
+    try:
+        d = resp.json()
+    except Exception:
+        return False, {}
+    if not isinstance(d, dict):
+        return False, {}
+    return (d.get("error") or {}).get("code") == "ok", d
+
+
+@app.route("/api/tiktok/auth-url")
+@login_required
+def tiktok_auth_url():
+    if not TIKTOK_CLIENT_KEY:
+        return jsonify({"ok": False,
+                        "error": "TikTok abhi configure nahi hua — server par "
+                                 "Client Key set nahi hai."}), 503
+    state = uuid.uuid4().hex
+    session["tiktok_state"] = state
+    q = urlencode({
+        "client_key": TIKTOK_CLIENT_KEY,
+        "scope": TIKTOK_SCOPES,
+        "response_type": "code",
+        "redirect_uri": TIKTOK_REDIRECT_URI,
+        "state": state,
+    })
+    return jsonify({"ok": True,
+                    "url": f"https://www.tiktok.com/v2/auth/authorize/?{q}"})
+
+
+@app.route("/tiktok/callback")
+def tiktok_callback():
+    state = request.args.get("state") or ""
+    saved = session.pop("tiktok_state", None)
+    if not saved or state != saved:
+        return redirect("/?tiktok=error&reason=state")
+    user = current_user()
+    if not user:
+        return redirect("/")
+    code = request.args.get("code") or ""
+    if not code or requests is None:
+        return redirect("/?tiktok=error&reason=code")
+    try:
+        r = requests.post(f"{TIKTOK_API_BASE}/oauth/token/", data={
+            "client_key": TIKTOK_CLIENT_KEY,
+            "client_secret": TIKTOK_CLIENT_SECRET,
+            "code": code,
+            "grant_type": "authorization_code",
+            "redirect_uri": TIKTOK_REDIRECT_URI,
+        }, timeout=30)
+        d = r.json()
+    except Exception:
+        return redirect("/?tiktok=error&reason=token")
+    if not isinstance(d, dict) or not d.get("access_token"):
+        return redirect("/?tiktok=error&reason=token")
+    db().execute(
+        "INSERT OR REPLACE INTO tiktok_tokens "
+        "(user_id, open_id, access_token, refresh_token, expires_at, scope) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (user["id"], d.get("open_id"), d["access_token"], d.get("refresh_token"),
+         int(time.time()) + int(d.get("expires_in") or 0), d.get("scope")))
+    db().commit()
+    return redirect("/#upload")
+
+
+@app.route("/api/tiktok/status")
+@login_required
+def tiktok_status():
+    tok = tiktok_tokens_for(session["user_id"])
+    name = None
+    if tok and requests is not None:
+        try:
+            r = requests.post(
+                f"{TIKTOK_API_BASE}/post/publish/creator_info/query/",
+                headers={"Authorization": f"Bearer {tok['access_token']}"},
+                timeout=15)
+            ok, d = _tiktok_ok(r)
+            if ok:
+                u = ((d.get("data") or {}).get("user") or {})
+                name = u.get("nickname") or u.get("username")
+        except Exception:
+            name = None
+    return jsonify({"ok": True, "configured": bool(TIKTOK_CLIENT_KEY),
+                    "connected": bool(tok), "name": name})
+
+
+@app.route("/api/tiktok/disconnect", methods=["POST"])
+@login_required
+def tiktok_disconnect():
+    db().execute("DELETE FROM tiktok_tokens WHERE user_id = ?",
+                 (session["user_id"],))
+    db().commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/tiktok/upload", methods=["POST"])
+@login_required
+def tiktok_upload():
+    uid = session["user_id"]
+    tok = tiktok_tokens_for(uid)
+    if not tok:
+        return jsonify({"ok": False,
+                        "error": "Pehle TikTok connect karo — upar wale button "
+                                 "se apna TikTok account joro."}), 400
+    if requests is None:
+        return jsonify({"ok": False,
+                        "error": "Server par requests library available nahi hai."}), 501
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"ok": False, "error": "Video file select karo."}), 400
+    data_bytes = f.read()
+    size = len(data_bytes)
+    if size == 0:
+        return jsonify({"ok": False, "error": "Video file khali hai."}), 400
+    if size > TIKTOK_MAX_UPLOAD:
+        return jsonify({"ok": False,
+                        "error": f"Video bahut bari hai ({human_size(size)}) — "
+                                 "TikTok upload ki had 64 MB hai, pehle Compress "
+                                 "tool se chhoti kar lo."}), 400
+    title = (request.form.get("title") or "").strip() \
+        or os.path.splitext(f.filename)[0]
+    headers = {"Authorization": f"Bearer {tok['access_token']}",
+               "Content-Type": "application/json; charset=UTF-8"}
+    source_info = {"source": "FILE_UPLOAD", "video_size": size,
+                   "chunk_size": size, "total_chunk_count": 1}
+
+    def _put(upload_url):
+        return requests.put(upload_url, data=data_bytes, headers={
+            "Content-Type": "video/mp4",
+            "Content-Length": str(size),
+            "Content-Range": f"bytes 0-{size - 1}/{size}",
+        }, timeout=300)
+
+    errors = []
+    # Flow A — direct post (SELF_ONLY: audit se pehle sirf khud ko dikhega)
+    try:
+        r = requests.post(f"{TIKTOK_API_BASE}/post/publish/video/init/",
+                          headers=headers, json={
+                              "post_info": {"title": title,
+                                            "privacy_level": "SELF_ONLY",
+                                            "disable_comment": False},
+                              "source_info": source_info,
+                          }, timeout=30)
+        ok, d = _tiktok_ok(r)
+        if ok and (d.get("data") or {}).get("upload_url"):
+            pr = _put(d["data"]["upload_url"])
+            if pr.status_code in (200, 201):
+                bump_stats(uid, tiktok_uploads=1)
+                return jsonify({"ok": True, "mode": "direct",
+                                "publish_id": d["data"].get("publish_id")})
+            errors.append(f"Direct post ki file upload fail (HTTP {pr.status_code}).")
+        else:
+            errors.append("Direct post: " + _tiktok_error_text(r))
+    except Exception as e:
+        errors.append(f"Direct post: {str(e)[:150]}")
+    # Flow B — inbox draft (video TikTok inbox mein draft ban kar jayegi)
+    try:
+        r = requests.post(f"{TIKTOK_API_BASE}/post/publish/inbox/video/init/",
+                          headers=headers, json={"source_info": source_info},
+                          timeout=30)
+        ok, d = _tiktok_ok(r)
+        if ok and (d.get("data") or {}).get("upload_url"):
+            pr = _put(d["data"]["upload_url"])
+            if pr.status_code in (200, 201):
+                bump_stats(uid, tiktok_uploads=1)
+                return jsonify({"ok": True, "mode": "inbox",
+                                "publish_id": d["data"].get("publish_id")})
+            errors.append(f"Inbox ki file upload fail (HTTP {pr.status_code}).")
+        else:
+            errors.append("Inbox draft: " + _tiktok_error_text(r))
+    except Exception as e:
+        errors.append(f"Inbox draft: {str(e)[:150]}")
+    return jsonify({"ok": False,
+                    "error": "TikTok upload fail ho gaya — "
+                             + " | ".join(errors)}), 422
 
 # ---------------------------------------------------------------- misc
 
