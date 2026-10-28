@@ -558,6 +558,11 @@ _PAGE_STYLE = ("<style>body{font-family:sans-serif;background:#0f1220;color:#eef
                "h1{font-size:24px}h2{font-size:17px;margin-top:26px}a{color:#6c8cff}</style>")
 
 
+@app.route("/tiktok7gWHUCwo11eUVlbu4rpVkUGLPChof2Ra.txt")
+def tiktok_site_verification():
+    return send_from_directory(BASE_DIR, "tiktok7gWHUCwo11eUVlbu4rpVkUGLPChof2Ra.txt")
+
+
 @app.route("/privacy")
 def privacy():
     return (_PAGE_STYLE +
