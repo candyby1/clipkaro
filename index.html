@@ -63,6 +63,19 @@
   .bar-row .bc { flex: 0 0 40px; text-align: right; color: #9aa3c7; }
   .bar-track { flex: 1; background: #0f1220; border: 1px solid #2a3052; border-radius: 6px; height: 12px; overflow: hidden; }
   .bar-fill { height: 100%; background: #6c8cff; }
+  .plan-cards { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+  .plan-card { flex: 1 1 170px; background: #0f1220; border: 1px solid #2a3052; border-radius: 14px; padding: 18px; text-align: center; }
+  .plan-card h4 { font-size: 16px; }
+  .plan-card .price { font-size: 26px; font-weight: 700; color: #6c8cff; margin: 6px 0; }
+  .plan-card .sub { color: #9aa3c7; font-size: 13px; line-height: 1.5; }
+  .qrimg { width: 240px; max-width: 100%; border-radius: 12px; border: 1px solid #2a3052; margin-top: 10px; background: #fff; }
+  table.ptable { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+  table.ptable th, table.ptable td { border: 1px solid #2a3052; padding: 7px 9px; text-align: left; vertical-align: top; }
+  table.ptable th { background: #0f1220; color: #9aa3c7; }
+  .badge.pending { background: #3b2f10; color: #fbbf24; }
+  .badge.approved { background: #14532d; color: #4ade80; }
+  .badge.rejected { background: #5b1a1a; color: #f87171; }
+  .badge.plan-on { background: #14532d; color: #4ade80; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -90,8 +103,9 @@
   </div>
 
   <div id="userBar" class="userbar hidden">
-    <span>👤 Logged in: <b id="meName"></b></span>
+    <span>👤 Logged in: <b id="meName"></b> &nbsp;<span id="planBadge" class="badge plan-on">Plan: …</span></span>
     <span>
+      <button class="ghost" onclick="showTab('plans')">💎 Plans</button>
       <button class="ghost" onclick="togglePwCard()">🔑 Password Change</button>
       <button class="ghost" onclick="doLogout()">Logout</button>
     </span>
@@ -123,6 +137,7 @@
       <button class="tab" data-tab="dash" onclick="showTab('dash', this)">📊 Dashboard</button>
       <button class="tab" data-tab="voice" onclick="showTab('voice', this)">🎙 Voiceover</button>
       <button class="tab" data-tab="editor" onclick="showTab('editor', this)">🎬 Editor Tools</button>
+      <button class="tab" data-tab="plans" onclick="showTab('plans', this)">💎 Plans</button>
     </div>
 
     <!-- DOWNLOAD TAB -->
@@ -656,6 +671,92 @@
       </div>
       <div class="status" id="mtStatus"></div>
     </div>
+
+    <!-- PLANS TAB -->
+    <div id="tab-plans" class="card hidden">
+      <h3 class="section" style="margin-top:0">💎 Plans &amp; Trial</h3>
+      <p style="color:#9aa3c7;font-size:13.5px;line-height:1.6">Saare tools istemal karne ke liye pehle <b style="color:#cfd6f5">FREE Trial</b> ya koi <b style="color:#cfd6f5">Plan</b> active karein.</p>
+      <div class="status" id="plansStatus"></div>
+
+      <div class="plan-cards">
+        <div class="plan-card">
+          <h4>🆓 1 Day FREE Trial</h4>
+          <div class="price">FREE</div>
+          <div class="sub">24 ghante ke liye saare tools<br>Sirf aik dafa, har account par</div>
+        </div>
+        <div class="plan-card">
+          <h4>📅 Monthly</h4>
+          <div class="price">Rs 2,500</div>
+          <div class="sub">30 din ke liye saare tools<br>Renew par waqt aage barh jata hai</div>
+        </div>
+        <div class="plan-card">
+          <h4>👑 Lifetime</h4>
+          <div class="price">Rs 8,000</div>
+          <div class="sub">Aik dafa payment<br>Hamesha ke liye — koi expiry nahi</div>
+        </div>
+      </div>
+
+      <h3 class="section">🆓 Trial Active Karein</h3>
+      <label>Trial Code</label>
+      <div class="row">
+        <input type="text" id="trialCode" placeholder="Trial code likhein">
+        <button class="primary" id="trialBtn" onclick="doTrial()">Trial Active Karein</button>
+      </div>
+      <div class="note hidden" id="trialUsedNote">ℹ️ Aap ka FREE trial pehle use ho chuka hai — ab Monthly ya Lifetime plan lein.</div>
+      <div class="status" id="trialStatus"></div>
+
+      <h3 class="section">💳 Payment Details</h3>
+      <p style="color:#9aa3c7;font-size:13.5px;line-height:1.6">Pehle neeche diye gaye account par payment karein, phir is page ke <b style="color:#cfd6f5">Payment Submit</b> form se details bhejein. Verify hote hi plan active kar diya jayega.</p>
+      <div class="note" style="margin-top:10px">
+        <b>EasyPaisa</b><br>
+        Account Title: MUHAMMAD AWAIS<br>
+        <img class="qrimg" src="/payments/easypaisa-qr.png" alt="EasyPaisa QR">
+      </div>
+      <div class="note">
+        <b>Meezan Bank</b><br>
+        Bank: Meezan Bank<br>
+        Branch: MEEZAN DIGITAL CENTRE<br>
+        Account Title: MUHAMMAD AWAIS<br>
+        Account Number: 00300115388499<br>
+        IBAN: PK16MEZN0000300115388499<br>
+        <img class="qrimg" src="/payments/meezan-qr.png" alt="Meezan Bank QR">
+      </div>
+
+      <h3 class="section">📩 Payment Submit Karein</h3>
+      <div class="row">
+        <div><label>Plan</label>
+          <select id="payPlan">
+            <option value="monthly">Monthly — Rs 2,500</option>
+            <option value="lifetime">Lifetime — Rs 8,000</option>
+          </select></div>
+        <div><label>Payment Method</label>
+          <select id="payMethod">
+            <option value="EasyPaisa">EasyPaisa</option>
+            <option value="Meezan Bank">Meezan Bank</option>
+          </select></div>
+      </div>
+      <label>Sender Name (jis naam se payment bheji)</label>
+      <input type="text" id="payName" placeholder="Sender ka naam">
+      <label>Sender Phone Number</label>
+      <input type="text" id="payPhone" placeholder="03xx-xxxxxxx">
+      <label>Transaction ID / Reference</label>
+      <input type="text" id="payTxn" placeholder="Transaction ID likhein">
+      <div class="row" style="margin-top:16px">
+        <button class="primary" id="payBtn" onclick="doPayRequest()" style="width:100%">Payment Bhej Dein</button>
+      </div>
+      <div class="status" id="payStatus"></div>
+
+      <h3 class="section">🧾 Meri Payment Requests</h3>
+      <div id="myPayments"><p style="color:#9aa3c7;font-size:14px">Abhi koi payment request nahi.</p></div>
+
+      <div id="adminArea" class="hidden">
+        <h3 class="section">🛠 Admin — Payment Requests</h3>
+        <div id="adminPayments" style="overflow-x:auto"></div>
+        <div class="status" id="adminStatus"></div>
+        <h3 class="section">👥 Admin — Users &amp; Plans</h3>
+        <div id="adminUsers" style="overflow-x:auto"></div>
+      </div>
+    </div>
   </div>
 
   <div class="platforms">
@@ -682,6 +783,12 @@ function setStatus(id, msg, cls) {
 async function api(path, opts) {
   const r = await fetch(path, opts || {});
   if (r.status === 401) { showAuth(); }
+  if (r.status === 403) {
+    try {
+      const d = await r.clone().json();
+      if (d && d.error === 'plan_required') openPlans(d.message);
+    } catch(e) {}
+  }
   return r;
 }
 function jsonOpts(body) { return { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) }; }
@@ -707,7 +814,7 @@ function showMain(username) {
   window.CK_USER = username;
   const ov = document.getElementById('ovText');
   if (ov && !ov.value) ov.value = username;
-  checkCookies(); checkCaptions(); loadJobs(); refreshClipFiles(); loadTikTokStatus();
+  checkCookies(); checkCaptions(); loadJobs(); refreshClipFiles(); loadTikTokStatus(); loadPlans();
 }
 async function doAuth() {
   const username = document.getElementById('authUser').value.trim();
@@ -758,13 +865,14 @@ async function checkSession() {
 /* ---------- TABS ---------- */
 function showTab(t, btn) {
   document.querySelectorAll('.tab[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
-  ['download','grab','clip','subs','upload','jobs','profiles','dash','voice','editor'].forEach(x =>
+  ['download','grab','clip','subs','upload','jobs','profiles','dash','voice','editor','plans'].forEach(x =>
     document.getElementById('tab-' + x).classList.toggle('hidden', x !== t));
   if (t === 'jobs') loadJobs();
   if (t === 'upload') loadTikTokStatus();
   if (t === 'clip' || t === 'voice' || t === 'editor') refreshClipFiles();
   if (t === 'profiles') loadProfiles();
   if (t === 'dash') loadStats();
+  if (t === 'plans') loadPlans();
 }
 
 /* ---------- DOWNLOAD ---------- */
@@ -1150,6 +1258,7 @@ function uploadVideoToPage(pgId, pgToken, file, title, desc, onProgress) {
 }
 
 async function uploadToFB() {
+  if (!(await planActiveCheck())) { setStatus('upStatus', 'Pehle Trial ya Plan active karein — Plans tab khol diya gaya hai.', 'err'); return; }
   const file = document.getElementById('videoFile').files[0];
   if (!file) { setStatus('upStatus', 'Pehle video file select karo.', 'err'); return; }
   const checked = Array.from(document.querySelectorAll('.page-check:checked'));
@@ -1584,6 +1693,230 @@ async function loadStats() {
     list.forEach(s => barRow(srcs, s.source, s.count, sMax));
     setStatus('dashStatus', '', '');
   } catch(e) { setStatus('dashStatus', '❌ Stats load nahi ho sake.', 'err'); }
+}
+
+/* ---------- PLANS & TRIAL ---------- */
+window.CK_PLAN = null;
+
+function openPlans(msg) {
+  showTab('plans');
+  if (msg) setStatus('plansStatus', '⚠️ ' + msg, 'err');
+  loadPlans();
+}
+
+async function planActiveCheck() {
+  try {
+    const r = await fetch('/api/plans/status');
+    const d = await r.json();
+    if (d && d.ok && d.active) { window.CK_PLAN = d; renderPlanBadge(d); return true; }
+    openPlans('Pehle Trial ya Plan active karein');
+    return false;
+  } catch(e) { return false; }
+}
+
+function fmtExpiryDate(unix) {
+  if (!unix) return '';
+  return new Date(unix * 1000).toLocaleDateString('en-GB', {day: 'numeric', month: 'short'});
+}
+
+function planBadgeText(d) {
+  if (d.is_admin) return 'Plan: Admin 👑';
+  if (d.plan === 'lifetime' && d.active) return 'Plan: Lifetime';
+  if (d.plan === 'monthly' && d.active && d.plan_expiry)
+    return 'Plan: Monthly — ' + fmtExpiryDate(d.plan_expiry) + ' tak';
+  if (d.plan === 'trial' && d.active && d.plan_expiry) {
+    const hrs = Math.max(1, Math.ceil((d.plan_expiry * 1000 - Date.now()) / 3600000));
+    return 'Plan: Trial — ' + hrs + ' ghante baqi';
+  }
+  return 'Koi Plan Nahi';
+}
+
+function renderPlanBadge(d) {
+  const b = document.getElementById('planBadge');
+  if (b) b.textContent = planBadgeText(d);
+  const tb = document.getElementById('trialBtn');
+  if (tb) tb.disabled = !!d.trial_used;
+  const tn = document.getElementById('trialUsedNote');
+  if (tn) tn.classList.toggle('hidden', !d.trial_used);
+  const aa = document.getElementById('adminArea');
+  if (aa) aa.classList.toggle('hidden', !d.is_admin);
+  const ps = document.getElementById('plansStatus');
+  if (ps && !ps.textContent) {
+    if (d.is_admin) setStatus('plansStatus', '👑 Aap Admin hain — saare tools hamesha active hain.', 'ok');
+    else if (d.active) setStatus('plansStatus', '✅ Aap ka plan active hai: ' + planBadgeText(d).replace('Plan: ', ''), 'ok');
+    else setStatus('plansStatus', '⚠️ Abhi koi plan active nahi — pehle Trial ya Plan active karein.', 'err');
+  }
+}
+
+async function loadPlanStatus() {
+  try {
+    const r = await fetch('/api/plans/status');
+    const d = await r.json();
+    if (!d.ok) return null;
+    window.CK_PLAN = d;
+    renderPlanBadge(d);
+    if (d.is_admin) loadAdmin();
+    return d;
+  } catch(e) { return null; }
+}
+
+function loadPlans() { loadPlanStatus(); loadMyPayments(); }
+
+async function doTrial() {
+  const code = document.getElementById('trialCode').value.trim();
+  if (!code) { setStatus('trialStatus', 'Pehle trial code likhein.', 'err'); return; }
+  const btn = document.getElementById('trialBtn'); btn.disabled = true;
+  setStatus('trialStatus', 'Trial active ho raha hai…', 'info');
+  try {
+    const r = await api('/api/plans/trial', jsonOpts({code}));
+    const d = await r.json();
+    if (d.ok) {
+      setStatus('trialStatus', '✅ ' + (d.message || 'Trial active ho gaya hai.'), 'ok');
+      document.getElementById('plansStatus').textContent = '';
+      loadPlans();
+    } else {
+      setStatus('trialStatus', '❌ ' + (d.message || d.error || 'Trial active nahi ho saka.'), 'err');
+      btn.disabled = false;
+    }
+  } catch(e) { setStatus('trialStatus', '❌ Network error.', 'err'); btn.disabled = false; }
+}
+
+async function doPayRequest() {
+  const body = {
+    plan: document.getElementById('payPlan').value,
+    method: document.getElementById('payMethod').value,
+    sender_name: document.getElementById('payName').value.trim(),
+    sender_phone: document.getElementById('payPhone').value.trim(),
+    txn_ref: document.getElementById('payTxn').value.trim(),
+  };
+  if (!body.sender_name || !body.sender_phone || !body.txn_ref) {
+    setStatus('payStatus', 'Sender name, phone number aur transaction ID — teeno likhein.', 'err'); return;
+  }
+  const btn = document.getElementById('payBtn'); btn.disabled = true;
+  setStatus('payStatus', 'Payment request bheji ja rahi hai…', 'info');
+  try {
+    const r = await api('/api/plans/pay-request', jsonOpts(body));
+    const d = await r.json();
+    if (d.ok) {
+      setStatus('payStatus', '✅ ' + (d.message || 'Payment request bhej di gayi hai.') + ' (Rs ' + d.amount + ')', 'ok');
+      document.getElementById('payTxn').value = '';
+      loadMyPayments();
+    } else setStatus('payStatus', '❌ ' + (d.error || 'Request fail ho gayi.'), 'err');
+  } catch(e) { setStatus('payStatus', '❌ Network error.', 'err'); }
+  btn.disabled = false;
+}
+
+const PAY_STATUS_LABEL = {pending: 'Pending', approved: 'Approved', rejected: 'Rejected'};
+
+async function loadMyPayments() {
+  const el = document.getElementById('myPayments');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/plans/my-payments');
+    const d = await r.json();
+    if (!d.ok) return;
+    el.innerHTML = '';
+    if (!d.payments.length) {
+      el.innerHTML = '<p style="color:#9aa3c7;font-size:14px">Abhi koi payment request nahi.</p>';
+      return;
+    }
+    d.payments.forEach(pay => {
+      const div = document.createElement('div');
+      div.className = 'job-item';
+      const left = document.createElement('span');
+      left.textContent = (pay.plan === 'lifetime' ? 'Lifetime' : 'Monthly') + ' — Rs ' +
+        Number(pay.amount).toLocaleString('en-US') + ' • ' + pay.method + ' • Txn: ' + pay.txn_ref;
+      const chip = document.createElement('span');
+      chip.className = 'badge ' + pay.status;
+      chip.textContent = PAY_STATUS_LABEL[pay.status] || pay.status;
+      div.appendChild(left); div.appendChild(chip);
+      el.appendChild(div);
+    });
+  } catch(e) {}
+}
+
+/* ---------- ADMIN (sirf admin ko dikhta hai) ---------- */
+async function loadAdmin() {
+  const pa = document.getElementById('adminPayments');
+  const pu = document.getElementById('adminUsers');
+  if (!pa || !pu) return;
+  try {
+    const r = await fetch('/api/admin/payments');
+    const d = await r.json();
+    if (!d.ok) return;
+    pa.innerHTML = '';
+    if (!d.payments.length) {
+      pa.innerHTML = '<p style="color:#9aa3c7;font-size:14px">Koi payment request nahi.</p>';
+    } else {
+      const tbl = document.createElement('table');
+      tbl.className = 'ptable';
+      tbl.innerHTML = '<tr><th>ID</th><th>User</th><th>Plan</th><th>Amount</th><th>Method</th><th>Txn</th><th>Sender</th><th>Status</th><th>Action</th></tr>';
+      d.payments.forEach(pay => {
+        const tr = document.createElement('tr');
+        const vals = [pay.id, pay.username, pay.plan === 'lifetime' ? 'Lifetime' : 'Monthly',
+          'Rs ' + Number(pay.amount).toLocaleString('en-US'), pay.method, pay.txn_ref,
+          pay.sender_name + ' (' + pay.sender_phone + ')'];
+        vals.forEach(v => {
+          const td = document.createElement('td');
+          td.textContent = v;
+          tr.appendChild(td);
+        });
+        const tdS = document.createElement('td');
+        const chip = document.createElement('span');
+        chip.className = 'badge ' + pay.status;
+        chip.textContent = PAY_STATUS_LABEL[pay.status] || pay.status;
+        tdS.appendChild(chip);
+        tr.appendChild(tdS);
+        const tdA = document.createElement('td');
+        if (pay.status === 'pending') {
+          const b1 = document.createElement('button');
+          b1.className = 'ghost'; b1.textContent = '✅ Approve';
+          b1.onclick = () => adminDecide(pay.id, 'approve');
+          const b2 = document.createElement('button');
+          b2.className = 'ghost'; b2.textContent = '❌ Reject';
+          b2.style.marginLeft = '6px';
+          b2.onclick = () => adminDecide(pay.id, 'reject');
+          tdA.appendChild(b1); tdA.appendChild(b2);
+        } else tdA.textContent = '—';
+        tr.appendChild(tdA);
+        tbl.appendChild(tr);
+      });
+      pa.appendChild(tbl);
+    }
+  } catch(e) {}
+  try {
+    const r = await fetch('/api/admin/users');
+    const d = await r.json();
+    if (!d.ok) return;
+    pu.innerHTML = '';
+    const tbl = document.createElement('table');
+    tbl.className = 'ptable';
+    tbl.innerHTML = '<tr><th>Username</th><th>Plan</th><th>Expiry</th><th>Trial Used</th></tr>';
+    d.users.forEach(u => {
+      const tr = document.createElement('tr');
+      const exp = u.plan === 'lifetime' ? 'Hamesha' : (u.plan_expiry ? new Date(u.plan_expiry * 1000).toLocaleString('en-GB') : '—');
+      [u.username, u.plan || 'none', exp, u.trial_used ? 'Han' : 'Nahi'].forEach(v => {
+        const td = document.createElement('td');
+        td.textContent = v;
+        tr.appendChild(td);
+      });
+      tbl.appendChild(tr);
+    });
+    pu.appendChild(tbl);
+  } catch(e) {}
+}
+
+async function adminDecide(id, action) {
+  setStatus('adminStatus', 'Process ho raha hai…', 'info');
+  try {
+    const r = await api('/api/admin/payments/' + id + '/' + action, { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) {
+      setStatus('adminStatus', '✅ ' + (d.message || 'Ho gaya.'), 'ok');
+      document.getElementById('plansStatus').textContent = '';
+      loadAdmin(); loadPlanStatus();
+    } else setStatus('adminStatus', '❌ ' + (d.error || 'Fail ho gaya.'), 'err');
+  } catch(e) { setStatus('adminStatus', '❌ Network error.', 'err'); }
 }
 
 checkSession();

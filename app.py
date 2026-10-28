@@ -163,12 +163,33 @@ def init_db():
             expires_at INTEGER,
             scope TEXT
         );
+        CREATE TABLE IF NOT EXISTS payments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            plan TEXT,
+            amount INTEGER,
+            method TEXT,
+            txn_ref TEXT,
+            sender_name TEXT,
+            sender_phone TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at INTEGER,
+            decided_at INTEGER
+        );
     """)
     # purani stats table mein tiktok_uploads column na ho to add kar do
     _cols = [r[1] for r in conn.execute("PRAGMA table_info(stats)").fetchall()]
     if "tiktok_uploads" not in _cols:
         conn.execute("ALTER TABLE stats ADD COLUMN tiktok_uploads "
                      "INTEGER NOT NULL DEFAULT 0")
+    # plans system: users table mein plan wale columns na hon to add kar do
+    _ucols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
+    if "plan" not in _ucols:
+        conn.execute("ALTER TABLE users ADD COLUMN plan TEXT DEFAULT 'none'")
+    if "plan_expiry" not in _ucols:
+        conn.execute("ALTER TABLE users ADD COLUMN plan_expiry INTEGER")
+    if "trial_used" not in _ucols:
+        conn.execute("ALTER TABLE users ADD COLUMN trial_used INTEGER DEFAULT 0")
     conn.commit()
     conn.close()
 
@@ -189,6 +210,51 @@ def login_required(fn):
     def wrapper(*args, **kwargs):
         if not current_user():
             return jsonify({"ok": False, "error": "Pehle login karo.", "need_login": True}), 401
+        return fn(*args, **kwargs)
+    return wrapper
+
+# ---------------------------------------------------------------- plans / trial
+
+TRIAL_CODE = "CandyBoy"
+PRICES = {"monthly": 2500, "lifetime": 8000}
+MONTHLY_DAYS = 30
+PLAN_REQUIRED_MSG = "Pehle Trial ya Plan active karein"
+
+
+def _full_user(user_id):
+    if not user_id:
+        return None
+    row = db().execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def is_admin(user):
+    return bool(user) and user.get("username") == "admin"
+
+
+def subscription_active(user):
+    """Admin hamesha active; lifetime hamesha; trial/monthly expiry tak."""
+    if not user:
+        return False
+    if is_admin(user):
+        return True
+    plan = user.get("plan") or "none"
+    if plan == "lifetime":
+        return True
+    if plan in ("trial", "monthly"):
+        exp = user.get("plan_expiry")
+        return bool(exp) and exp > int(time.time())
+    return False
+
+
+def plan_required(fn):
+    """Work/action endpoints ka gate — plan na ho to 403 plan_required."""
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        user = _full_user(session.get("user_id"))
+        if not subscription_active(user):
+            return jsonify({"ok": False, "error": "plan_required",
+                            "message": PLAN_REQUIRED_MSG}), 403
         return fn(*args, **kwargs)
     return wrapper
 
@@ -249,6 +315,185 @@ def change_password():
                  (generate_password_hash(new), session["user_id"]))
     db().commit()
     return jsonify({"ok": True})
+
+
+
+# ---------------------------------------------------------------- plans API
+
+def _plan_status_dict(user):
+    return {
+        "ok": True,
+        "plan": (user.get("plan") or "none"),
+        "plan_expiry": user.get("plan_expiry"),
+        "active": subscription_active(user),
+        "trial_used": int(user.get("trial_used") or 0),
+        "is_admin": is_admin(user),
+        "prices": dict(PRICES),
+    }
+
+
+@app.route("/api/plans/status")
+@login_required
+def plans_status():
+    return jsonify(_plan_status_dict(_full_user(session["user_id"])))
+
+
+@app.route("/api/plans/trial", methods=["POST"])
+@login_required
+def plans_trial():
+    data = request.get_json(force=True, silent=True) or {}
+    code = (data.get("code") or "").strip()
+    user = _full_user(session["user_id"])
+    if code.lower() != TRIAL_CODE.lower():
+        return jsonify({"ok": False, "error": "Trial code ghalat hai."}), 400
+    if int(user.get("trial_used") or 0):
+        return jsonify({"ok": False,
+                        "error": "Aap ka FREE trial pehle use ho chuka hai — "
+                                 "ab Monthly ya Lifetime plan lein."}), 400
+    now = int(time.time())
+    plan = user.get("plan") or "none"
+    if plan == "lifetime" or (plan == "monthly" and user.get("plan_expiry")
+                              and user["plan_expiry"] > now):
+        return jsonify({"ok": False,
+                        "error": "Aap ka paid plan pehle se active hai."}), 400
+    expiry = now + 86400
+    db().execute("UPDATE users SET plan = 'trial', plan_expiry = ?, "
+                 "trial_used = 1 WHERE id = ?", (expiry, user["id"]))
+    db().commit()
+    return jsonify({"ok": True, "plan": "trial", "plan_expiry": expiry,
+                    "message": "🎉 1 Day FREE Trial active ho gaya hai — "
+                               "24 ghante ke liye saare tools khul gaye hain."})
+
+
+@app.route("/api/plans/pay-request", methods=["POST"])
+@login_required
+def plans_pay_request():
+    data = request.get_json(force=True, silent=True) or {}
+    plan = (data.get("plan") or "").strip().lower()
+    method = (data.get("method") or "").strip()
+    txn_ref = (data.get("txn_ref") or "").strip()
+    sender_name = (data.get("sender_name") or "").strip()
+    sender_phone = (data.get("sender_phone") or "").strip()
+    if plan not in PRICES:
+        return jsonify({"ok": False,
+                        "error": "Plan ghalat hai — Monthly ya Lifetime chunein."}), 400
+    if method not in ("EasyPaisa", "Meezan Bank"):
+        return jsonify({"ok": False,
+                        "error": "Payment method ghalat hai — EasyPaisa ya Meezan Bank chunein."}), 400
+    if not txn_ref or not sender_name or not sender_phone:
+        return jsonify({"ok": False,
+                        "error": "Sender name, phone number aur transaction ID — teeno zaroori hain."}), 400
+    cur = db().execute(
+        "INSERT INTO payments (user_id, plan, amount, method, txn_ref, "
+        "sender_name, sender_phone, status, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
+        (session["user_id"], plan, PRICES[plan], method, txn_ref,
+         sender_name, sender_phone, int(time.time())))
+    db().commit()
+    return jsonify({"ok": True, "payment_id": cur.lastrowid,
+                    "amount": PRICES[plan],
+                    "message": "✅ Payment request bhej di gayi hai — verify "
+                               "karke aap ka plan active kar diya jayega."})
+
+
+@app.route("/api/plans/my-payments")
+@login_required
+def plans_my_payments():
+    rows = db().execute(
+        "SELECT id, plan, amount, method, txn_ref, sender_name, sender_phone, "
+        "status, created_at, decided_at FROM payments WHERE user_id = ? "
+        "ORDER BY id DESC LIMIT 50", (session["user_id"],)).fetchall()
+    return jsonify({"ok": True, "payments": [dict(r) for r in rows]})
+
+
+def _require_admin():
+    """(user, None) admin ho to, warna (None, 403 response)."""
+    user = _full_user(session.get("user_id"))
+    if not is_admin(user):
+        return None, (jsonify({"ok": False,
+                               "error": "Ye sirf admin ke liye hai."}), 403)
+    return user, None
+
+
+@app.route("/api/admin/payments")
+@login_required
+def admin_payments():
+    _, err = _require_admin()
+    if err:
+        return err
+    rows = db().execute(
+        "SELECT p.*, u.username FROM payments p "
+        "JOIN users u ON u.id = p.user_id "
+        "ORDER BY CASE p.status WHEN 'pending' THEN 0 ELSE 1 END, p.id DESC "
+        "LIMIT 100").fetchall()
+    return jsonify({"ok": True, "payments": [dict(r) for r in rows]})
+
+
+@app.route("/api/admin/users")
+@login_required
+def admin_users():
+    _, err = _require_admin()
+    if err:
+        return err
+    rows = db().execute(
+        "SELECT id, username, plan, plan_expiry, trial_used, created_at "
+        "FROM users ORDER BY id").fetchall()
+    return jsonify({"ok": True, "users": [dict(r) for r in rows]})
+
+
+@app.route("/api/admin/payments/<int:pid>/approve", methods=["POST"])
+@login_required
+def admin_payment_approve(pid):
+    _, err = _require_admin()
+    if err:
+        return err
+    pay = db().execute("SELECT * FROM payments WHERE id = ?", (pid,)).fetchone()
+    if not pay:
+        return jsonify({"ok": False, "error": "Payment nahi mili."}), 404
+    if pay["status"] != "pending":
+        return jsonify({"ok": False,
+                        "error": "Ye payment pehle hi decide ho chuki hai."}), 400
+    now = int(time.time())
+    if pay["plan"] == "lifetime":
+        db().execute("UPDATE users SET plan = 'lifetime', plan_expiry = NULL "
+                     "WHERE id = ?", (pay["user_id"],))
+    else:
+        user = _full_user(pay["user_id"])
+        base = now
+        if (user and user.get("plan") == "monthly"
+                and user.get("plan_expiry") and user["plan_expiry"] > now):
+            base = user["plan_expiry"]
+        db().execute("UPDATE users SET plan = 'monthly', plan_expiry = ? "
+                     "WHERE id = ?", (base + MONTHLY_DAYS * 86400, pay["user_id"]))
+    db().execute("UPDATE payments SET status = 'approved', decided_at = ? "
+                 "WHERE id = ?", (now, pid))
+    db().commit()
+    return jsonify({"ok": True, "message": "✅ Payment approve ho gayi — plan active kar diya gaya hai."})
+
+
+@app.route("/api/admin/payments/<int:pid>/reject", methods=["POST"])
+@login_required
+def admin_payment_reject(pid):
+    _, err = _require_admin()
+    if err:
+        return err
+    pay = db().execute("SELECT * FROM payments WHERE id = ?", (pid,)).fetchone()
+    if not pay:
+        return jsonify({"ok": False, "error": "Payment nahi mili."}), 404
+    if pay["status"] != "pending":
+        return jsonify({"ok": False,
+                        "error": "Ye payment pehle hi decide ho chuki hai."}), 400
+    db().execute("UPDATE payments SET status = 'rejected', decided_at = ? "
+                 "WHERE id = ?", (int(time.time()), pid))
+    db().commit()
+    return jsonify({"ok": True, "message": "Payment reject kar di gayi hai."})
+
+
+@app.route("/payments/<name>")
+def payment_qr(name):
+    if name not in ("easypaisa-qr.png", "meezan-qr.png"):
+        return jsonify({"ok": False, "error": "File nahi mili."}), 404
+    return send_from_directory(os.path.join(BASE_DIR, "payments"), name)
 
 
 @app.route("/api/me")
@@ -604,6 +849,7 @@ def terms():
 
 @app.route("/api/info", methods=["POST"])
 @login_required
+@plan_required
 def info():
     data = request.get_json(force=True, silent=True) or {}
     url = (data.get("url") or "").strip()
@@ -646,6 +892,7 @@ def info():
 
 @app.route("/api/download", methods=["POST"])
 @login_required
+@plan_required
 def download():
     data = request.get_json(force=True, silent=True) or {}
     url = (data.get("url") or "").strip()
@@ -714,6 +961,7 @@ def download():
 
 @app.route("/api/cookies", methods=["POST"])
 @login_required
+@plan_required
 def upload_cookies():
     f = request.files.get("cookies")
     if not f or not f.filename:
@@ -732,6 +980,7 @@ def cookies_status():
 
 @app.route("/api/grab", methods=["POST"])
 @login_required
+@plan_required
 def grab():
     data = request.get_json(force=True, silent=True) or {}
     url = (data.get("url") or "").strip()
@@ -900,6 +1149,7 @@ def _run_bulk_job(job_id, user_id, urls, cookiefile, fmt="original", secs=None,
 
 @app.route("/api/bulk-download", methods=["POST"])
 @login_required
+@plan_required
 def bulk_download():
     data = request.get_json(force=True, silent=True) or {}
     urls = [u.strip() for u in (data.get("urls") or []) if isinstance(u, str) and URL_RE.match(u.strip())]
@@ -993,6 +1243,7 @@ def _temp_upload(f, suffix=""):
 
 @app.route("/api/clip", methods=["POST"])
 @login_required
+@plan_required
 def clip():
     try:
         start = float(request.form.get("start") or 0)
@@ -1099,6 +1350,7 @@ def captions_status():
 
 @app.route("/api/subtitles", methods=["POST"])
 @login_required
+@plan_required
 def subtitles():
     model = _get_whisper()
     if model is None:
@@ -1154,6 +1406,7 @@ def subtitles():
 
 @app.route("/api/burn-subtitles", methods=["POST"])
 @login_required
+@plan_required
 def burn_subtitles():
     vf = request.files.get("video")
     sf = request.files.get("srt")
@@ -1242,6 +1495,7 @@ def profiles_list():
 
 @app.route("/api/profiles", methods=["POST"])
 @login_required
+@plan_required
 def profiles_add():
     data = request.get_json(force=True, silent=True) or {}
     name = (data.get("name") or "").strip()
@@ -1271,6 +1525,7 @@ def profiles_add():
 
 @app.route("/api/profiles/delete", methods=["POST"])
 @login_required
+@plan_required
 def profiles_delete():
     data = request.get_json(force=True, silent=True) or {}
     try:
@@ -1287,6 +1542,7 @@ def profiles_delete():
 
 @app.route("/api/profiles/import", methods=["POST"])
 @login_required
+@plan_required
 def profiles_import():
     text = None
     f = request.files.get("csv") or request.files.get("file")
@@ -1348,6 +1604,7 @@ def profiles_export():
 
 @app.route("/api/effects", methods=["POST"])
 @login_required
+@plan_required
 def effects():
     src, cleanup = _resolve_source()
     if not src:
@@ -1461,6 +1718,7 @@ def effects():
 
 @app.route("/api/overlay", methods=["POST"])
 @login_required
+@plan_required
 def overlay():
     src, cleanup = _resolve_source()
     if not src:
@@ -1528,6 +1786,7 @@ def overlay():
 
 @app.route("/api/autoclips", methods=["POST"])
 @login_required
+@plan_required
 def autoclips():
     try:
         n = int(request.form.get("count") or 1)
@@ -1701,6 +1960,7 @@ def _gtts_synthesize(text, lang, out_path):
 
 @app.route("/api/voiceover", methods=["POST"])
 @login_required
+@plan_required
 def voiceover():
     data = request.get_json(force=True, silent=True) or {}
     text = (data.get("text") or "").strip()
@@ -1757,6 +2017,7 @@ def _resolve_job_file(job_id, filename):
 
 @app.route("/api/voiceover-add", methods=["POST"])
 @login_required
+@plan_required
 def voiceover_add():
     vsrc, vclean = _resolve_source()
     if not vsrc:
@@ -1832,6 +2093,7 @@ def _resolve_source2():
 
 @app.route("/api/title", methods=["POST"])
 @login_required
+@plan_required
 def title_text():
     src, cleanup = _resolve_source()
     if not src:
@@ -1891,6 +2153,7 @@ def title_text():
 
 @app.route("/api/transition", methods=["POST"])
 @login_required
+@plan_required
 def transition():
     src1, clean1 = _resolve_source()
     if not src1:
@@ -1982,6 +2245,7 @@ def transition():
 
 @app.route("/api/enhance", methods=["POST"])
 @login_required
+@plan_required
 def enhance():
     src, cleanup = _resolve_source()
     if not src:
@@ -2023,6 +2287,7 @@ def enhance():
 
 @app.route("/api/audiofix", methods=["POST"])
 @login_required
+@plan_required
 def audiofix():
     src, cleanup = _resolve_source()
     if not src:
@@ -2075,6 +2340,7 @@ def audiofix():
 
 @app.route("/api/silence-cut", methods=["POST"])
 @login_required
+@plan_required
 def silence_cut():
     src, cleanup = _resolve_source()
     if not src:
@@ -2158,6 +2424,7 @@ def silence_cut():
 
 @app.route("/api/chromakey", methods=["POST"])
 @login_required
+@plan_required
 def chromakey():
     src, cleanup = _resolve_source()
     if not src:
@@ -2205,6 +2472,7 @@ def chromakey():
 
 @app.route("/api/gif", methods=["POST"])
 @login_required
+@plan_required
 def make_gif():
     src, cleanup = _resolve_source()
     if not src:
@@ -2245,6 +2513,7 @@ def make_gif():
 
 @app.route("/api/mp3", methods=["POST"])
 @login_required
+@plan_required
 def extract_mp3():
     src, cleanup = _resolve_source()
     if not src:
@@ -2275,6 +2544,7 @@ def extract_mp3():
 
 @app.route("/api/compress", methods=["POST"])
 @login_required
+@plan_required
 def compress():
     src, cleanup = _resolve_source()
     if not src:
@@ -2301,6 +2571,7 @@ def compress():
 
 @app.route("/api/thumbnail", methods=["POST"])
 @login_required
+@plan_required
 def thumbnail():
     src, cleanup = _resolve_source()
     if not src:
@@ -2402,6 +2673,7 @@ def _tiktok_ok(resp):
 
 @app.route("/api/tiktok/auth-url")
 @login_required
+@plan_required
 def tiktok_auth_url():
     if not TIKTOK_CLIENT_KEY:
         return jsonify({"ok": False,
@@ -2487,6 +2759,7 @@ def tiktok_disconnect():
 
 @app.route("/api/tiktok/upload", methods=["POST"])
 @login_required
+@plan_required
 def tiktok_upload():
     uid = session["user_id"]
     tok = tiktok_tokens_for(uid)
