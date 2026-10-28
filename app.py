@@ -96,7 +96,7 @@ SAFE_NAME_RE = re.compile(r'[\\/*?:"<>|]')
 # ---------------------------------------------------------------- TikTok config
 # Client Key deploy ke waqt yahan bhara jata hai (placeholder khali hai);
 # Secret hamesha env se aata hai — code mein kabhi hardcode nahi hota.
-TIKTOK_CLIENT_KEY = "awuo8ngjthqd25g2"
+TIKTOK_CLIENT_KEY = os.environ.get("TIKTOK_CLIENT_KEY", "awuo8ngjthqd25g2")
 TIKTOK_CLIENT_SECRET = os.environ.get("TIKTOK_CLIENT_SECRET", "")
 TIKTOK_REDIRECT_URI = "https://clipkaro-yfbq.onrender.com/tiktok/callback"
 TIKTOK_SCOPES = "user.info.basic,video.upload,video.publish"
