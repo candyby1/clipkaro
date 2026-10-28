@@ -52,6 +52,17 @@
   .badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #2a3052; color: #cfd6f5; white-space: nowrap; }
   .badge.done { background: #14532d; color: #4ade80; } .badge.error { background: #5b1a1a; color: #f87171; } .badge.downloading { background: #3b2f10; color: #fbbf24; }
   h3.section { margin: 20px 0 4px; font-size: 16px; }
+  input[type=range] { width: 100%; accent-color: #6c8cff; }
+  input[type=color] { width: 70px; height: 40px; padding: 4px; border-radius: 10px; border: 1px solid #2a3052; background: #0f1220; cursor: pointer; }
+  .tiles { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  .tile { flex: 1 1 130px; background: #0f1220; border: 1px solid #2a3052; border-radius: 12px; padding: 14px; text-align: center; }
+  .tile .num { font-size: 24px; font-weight: 700; color: #6c8cff; }
+  .tile .lbl { color: #9aa3c7; font-size: 12.5px; margin-top: 4px; }
+  .bar-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 13.5px; }
+  .bar-row .bl { flex: 0 0 140px; color: #cfd6f5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-row .bc { flex: 0 0 40px; text-align: right; color: #9aa3c7; }
+  .bar-track { flex: 1; background: #0f1220; border: 1px solid #2a3052; border-radius: 6px; height: 12px; overflow: hidden; }
+  .bar-fill { height: 100%; background: #6c8cff; }
 </style>
 </head>
 <body>
@@ -75,7 +86,7 @@
       <button class="primary" id="authBtn" onclick="doAuth()" style="width:100%">Login</button>
     </div>
     <div class="status" id="authStatus"></div>
-    <div class="note">🔒 Password <b>hash</b> ho kar save hota hai — plain text kabhi save nahi hota. Login ke baad hi Download, Grabber, Clipper aur Subtitles chalenge. Har user ko sirf apni hi jobs/history dikhti hai.</div>
+    <div class="note">🔒 Password <b>hash</b> ho kar save hota hai — plain text kabhi save nahi hota. Login ke baad hi Download, Grabber, Profiles, Clipper & Effects, Auto Clips, Subtitles aur Dashboard chalenge. Har user ko sirf apni hi jobs/history dikhti hai.</div>
   </div>
 
   <div id="userBar" class="userbar hidden">
@@ -88,10 +99,12 @@
     <div class="tabs">
       <button class="tab active" data-tab="download" onclick="showTab('download', this)">📥 Download</button>
       <button class="tab" data-tab="grab" onclick="showTab('grab', this)">🔗 Link Grabber</button>
-      <button class="tab" data-tab="clip" onclick="showTab('clip', this)">✂️ Clipper</button>
+      <button class="tab" data-tab="clip" onclick="showTab('clip', this)">✂️ Clipper & Effects</button>
       <button class="tab" data-tab="subs" onclick="showTab('subs', this)">💬 Subtitles</button>
       <button class="tab" data-tab="upload" onclick="showTab('upload', this)">📤 Upload</button>
       <button class="tab" data-tab="jobs" onclick="showTab('jobs', this)">🗂 My Jobs</button>
+      <button class="tab" data-tab="profiles" onclick="showTab('profiles', this)">👤 Profiles</button>
+      <button class="tab" data-tab="dash" onclick="showTab('dash', this)">📊 Dashboard</button>
     </div>
 
     <!-- DOWNLOAD TAB -->
@@ -108,6 +121,14 @@
         <div class="meta" id="vmeta"></div>
         <label>Quality</label>
         <select id="quality"></select>
+        <label>Output Format</label>
+        <select id="dlFmt">
+          <option value="original">Original</option>
+          <option value="vertical">Vertical 9:16 (Reels / Shorts)</option>
+          <option value="horizontal">Horizontal 16:9</option>
+        </select>
+        <label>Sirf pehle itne seconds (khali = poori video)</label>
+        <input type="number" id="dlSecs" min="1" step="1" placeholder="e.g. 30">
         <div class="row" style="margin-top:14px">
           <button class="primary" id="dlBtn" onclick="startDownload()" style="width:100%">⬇ Download Video</button>
         </div>
@@ -133,6 +154,23 @@
         <button class="primary" id="bulkBtn" onclick="startBulk()">⬇ Download Selected</button>
       </div>
       <div id="bulkProgress"></div>
+      <h3 class="section">⚙️ Bulk Download Settings</h3>
+      <p style="color:#9aa3c7;font-size:13.5px;line-height:1.6">Ye settings Grabber ke bulk download aur neeche wale Multi-Link download — dono par lagu hongi.</p>
+      <div class="row">
+        <div><label>Output Format</label>
+          <select id="bulkFmt">
+            <option value="original">Original</option>
+            <option value="vertical">Vertical 9:16</option>
+            <option value="horizontal">Horizontal 16:9</option>
+          </select></div>
+        <div><label>Sirf pehle seconds</label><input type="number" id="bulkSecs" min="1" step="1" placeholder="khali = poori"></div>
+        <div><label>Ek saath downloads</label>
+          <select id="bulkConc">
+            <option value="1">1</option><option value="2">2</option>
+            <option value="3">3</option><option value="4">4</option>
+          </select></div>
+      </div>
+      <label class="check"><input type="checkbox" id="bulkSkipDup" checked> Duplicate skip karo (jo video pehle download ho chuki hai, dobara download na ho)</label>
       <h3 class="section">📋 Kai Links Ek Saath (Multi-Link)</h3>
       <p style="color:#9aa3c7;font-size:13.5px;line-height:1.6">Alag alag videos ke links hain? Neeche paste kar do — sab ek saath bulk download ho jayenge, progress upar wale hisse mein dikhega.</p>
       <label>Kai links ek saath — har line par ek link paste karein</label>
@@ -157,7 +195,7 @@
       <label>Video file upload karo</label>
       <input type="file" id="clipFile" accept="video/*">
       <label>— ya — Bulk download ki hui file select karo</label>
-      <select id="clipJobFile"><option value="">(koi file nahi)</option></select>
+      <select id="clipJobFile" class="jobfile-sel"><option value="">(koi file nahi)</option></select>
       <div class="row">
         <div><label>Start (seconds)</label><input type="number" id="clipStart" min="0" step="0.1" value="0"></div>
         <div><label>End (seconds)</label><input type="number" id="clipEnd" min="0" step="0.1" value="10"></div>
@@ -166,6 +204,87 @@
         <button class="primary" id="clipBtn" onclick="doClip()" style="width:100%">✂️ Clip Banao</button>
       </div>
       <div class="status" id="clipStatus"></div>
+
+      <h3 class="section">🎨 Video Effects</h3>
+      <p style="color:#9aa3c7;font-size:13.5px;line-height:1.6">Brightness, contrast, color badlo, flip/rotate karo ya sides se crop karo — result My Jobs mein bhi save hota hai.</p>
+      <label>Video file upload karo</label>
+      <input type="file" id="fxFile" accept="video/*">
+      <label>— ya — Downloaded file select karo</label>
+      <select id="fxJobFile" class="jobfile-sel"><option value="">(koi file nahi)</option></select>
+      <label>Brightness: <span id="fxBrightVal">0</span></label>
+      <input type="range" id="fxBright" min="-0.3" max="0.3" step="0.05" value="0" oninput="document.getElementById('fxBrightVal').textContent=this.value">
+      <label>Contrast: <span id="fxContrastVal">1</span></label>
+      <input type="range" id="fxContrast" min="0.7" max="1.4" step="0.05" value="1" oninput="document.getElementById('fxContrastVal').textContent=this.value">
+      <label>Saturation: <span id="fxSatVal">1</span></label>
+      <input type="range" id="fxSat" min="0" max="2" step="0.1" value="1" oninput="document.getElementById('fxSatVal').textContent=this.value">
+      <div class="row">
+        <div><label>Flip</label>
+          <select id="fxFlip"><option value="none">None</option><option value="h">Horizontal</option><option value="v">Vertical</option></select></div>
+        <div><label>Rotate</label>
+          <select id="fxRotate"><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></div>
+      </div>
+      <label class="check"><input type="checkbox" id="fxCropOn"> Crop karo (center se)</label>
+      <label>Har side se crop %</label>
+      <input type="number" id="fxCropPct" min="1" max="45" value="10">
+      <div class="row" style="margin-top:16px">
+        <button class="primary" id="fxBtn" onclick="doEffects()" style="width:100%">🎨 Effects Lagao</button>
+      </div>
+      <div class="status" id="fxStatus"></div>
+
+      <h3 class="section">🏷️ Brand Overlay (Text / Logo)</h3>
+      <p style="color:#9aa3c7;font-size:13.5px;line-height:1.6">Apna naam/text ya PNG logo video ke konay mein lagao — text aur logo aik saath bhi lag sakte hain.</p>
+      <label>Video file upload karo</label>
+      <input type="file" id="ovFile" accept="video/*">
+      <label>— ya — Downloaded file select karo</label>
+      <select id="ovJobFile" class="jobfile-sel"><option value="">(koi file nahi)</option></select>
+      <label>Watermark text (khali = sirf logo)</label>
+      <input type="text" id="ovText" placeholder="e.g. Mera Channel">
+      <div class="row">
+        <div><label>Text position</label>
+          <select id="ovPos"><option value="br">Bottom Right</option><option value="bl">Bottom Left</option><option value="tr">Top Right</option><option value="tl">Top Left</option></select></div>
+        <div><label>Text size</label><input type="number" id="ovSize" min="12" max="120" value="36"></div>
+      </div>
+      <label>Text opacity: <span id="ovOpacityVal">0.9</span></label>
+      <input type="range" id="ovOpacity" min="0.1" max="1" step="0.05" value="0.9" oninput="document.getElementById('ovOpacityVal').textContent=this.value">
+      <label>Logo file (PNG — optional)</label>
+      <input type="file" id="ovLogo" accept="image/*">
+      <div class="row">
+        <div><label>Logo position</label>
+          <select id="ovLogoPos"><option value="br">Bottom Right</option><option value="bl">Bottom Left</option><option value="tr">Top Right</option><option value="tl">Top Left</option></select></div>
+        <div><label>Logo width % (video ka)</label><input type="number" id="ovLogoScale" min="2" max="90" value="20"></div>
+      </div>
+      <label>Logo opacity: <span id="ovLogoOpacityVal">1</span></label>
+      <input type="range" id="ovLogoOpacity" min="0.1" max="1" step="0.05" value="1" oninput="document.getElementById('ovLogoOpacityVal').textContent=this.value">
+      <div class="row" style="margin-top:16px">
+        <button class="primary" id="ovBtn" onclick="doOverlay()" style="width:100%">🏷️ Brand Lagao</button>
+      </div>
+      <div class="status" id="ovStatus"></div>
+
+      <h3 class="section">🎬 Auto Clips</h3>
+      <p style="color:#9aa3c7;font-size:13.5px;line-height:1.6">Lambi video do — shuru se barabar hisso mein chhote clips khud ban jayenge, har clip My Jobs mein alag save hoga.</p>
+      <label>Video file upload karo</label>
+      <input type="file" id="acFile" accept="video/*">
+      <label>— ya — Downloaded file select karo</label>
+      <select id="acJobFile" class="jobfile-sel"><option value="">(koi file nahi)</option></select>
+      <div class="row">
+        <div><label>Kitne clips (1–10)</label><input type="number" id="acCount" min="1" max="10" value="3"></div>
+        <div><label>Har clip ki length (seconds)</label><input type="number" id="acDur" min="1" value="60"></div>
+      </div>
+      <label>Output ratio</label>
+      <select id="acRatio">
+        <option value="original">Original</option>
+        <option value="portrait">Portrait 9:16</option>
+        <option value="landscape">Landscape 16:9</option>
+      </select>
+      <label class="check"><input type="checkbox" id="acWmOn"> Har clip par watermark lagao</label>
+      <label>Watermark text (khali = aapka username)</label>
+      <input type="text" id="acWmText" placeholder="khali chhoro to username lagega">
+      <label class="check"><input type="checkbox" id="acDelOrig"> Original file delete kar do (sirf job files par kaam karega)</label>
+      <div class="row" style="margin-top:16px">
+        <button class="primary" id="acBtn" onclick="doAutoclips()" style="width:100%">🎬 Auto Clips Banao</button>
+      </div>
+      <div class="status" id="acStatus"></div>
+      <div id="acResults"></div>
     </div>
 
     <!-- SUBTITLES TAB -->
@@ -184,6 +303,20 @@
       <input type="file" id="burnVideo" accept="video/*">
       <label>.srt file</label>
       <input type="file" id="burnSrt" accept=".srt">
+      <h3 class="section">🎨 Caption Style</h3>
+      <div class="row">
+        <div><label>Text color</label><input type="color" id="burnColor" value="#ffffff"></div>
+        <div><label>Outline color</label><input type="color" id="burnOutline" value="#000000"></div>
+      </div>
+      <div class="row">
+        <div><label>Position</label>
+          <select id="burnPos">
+            <option value="2">Bottom Center</option>
+            <option value="8">Top Center</option>
+            <option value="3">Bottom Right</option>
+          </select></div>
+        <div><label>Font size (14–30)</label><input type="number" id="burnSize" min="14" max="30" value="18"></div>
+      </div>
       <div class="row" style="margin-top:14px">
         <button class="primary" id="burnBtn" onclick="doBurn()" style="width:100%">🔥 Burn Karo</button>
       </div>
@@ -224,18 +357,67 @@
     <!-- JOBS TAB -->
     <div id="tab-jobs" class="card hidden">
       <div class="row">
-        <p style="color:#9aa3c7;font-size:15px">Aapki pichli bulk download jobs — sirf aap ko dikhti hain.</p>
+        <p style="color:#9aa3c7;font-size:15px">Aapki pichli jobs (bulk download, effects, overlay, clips) — sirf aap ko dikhti hain.</p>
         <button class="ghost" onclick="loadJobs()">🔄 Refresh</button>
       </div>
       <div id="jobsList"></div>
       <div class="status" id="jobsStatus"></div>
+    </div>
+
+    <!-- PROFILES TAB -->
+    <div id="tab-profiles" class="card hidden">
+      <p style="color:#9aa3c7;font-size:15px">Apne Facebook Pages / channels ke links yahan save kar lo — phir aik click mein unki videos Grab kar ke bulk download karo.</p>
+      <label>Profile ka naam</label>
+      <input type="text" id="pfName" placeholder="e.g. Meri Cooking Page">
+      <div class="row">
+        <div><label>Platform</label>
+          <select id="pfPlatform">
+            <option>Facebook</option><option>YouTube</option><option>TikTok</option>
+            <option>Instagram</option><option>Other</option>
+          </select></div>
+        <div><label>Auto clips per video (0 = off)</label><input type="number" id="pfClipCount" min="0" max="10" value="0"></div>
+      </div>
+      <label>Page / Channel URL</label>
+      <input type="text" id="pfUrl" placeholder="https://www.facebook.com/YourPage/videos">
+      <label class="check"><input type="checkbox" id="pfCaptions"> Auto captions on</label>
+      <label class="check"><input type="checkbox" id="pfBrand"> Brand overlay on</label>
+      <label>Brand text</label>
+      <input type="text" id="pfBrandText" placeholder="e.g. @MyPage">
+      <label class="check"><input type="checkbox" id="pfClips"> Auto clips on</label>
+      <div class="row" style="margin-top:14px">
+        <button class="primary" id="pfBtn" onclick="addProfile()" style="width:100%">➕ Profile Save Karo</button>
+      </div>
+      <div class="status" id="pfStatus"></div>
+      <h3 class="section">📂 Mere Profiles</h3>
+      <div id="pfList"></div>
+      <h3 class="section">📥 Import / Export (CSV)</h3>
+      <div class="row">
+        <input type="file" id="pfCsv" accept=".csv,text/csv">
+        <button class="ghost" onclick="importProfiles()">Import CSV</button>
+        <button class="ghost" onclick="exportProfiles()">⬇ Export CSV</button>
+      </div>
+      <div class="note">CSV ki pehli line mein columns hon: <b>name, platform, url</b> — baqi optional hain: captions_on, brand_on, brand_text, clips_on, clip_count.</div>
+    </div>
+
+    <!-- DASHBOARD TAB -->
+    <div id="tab-dash" class="card hidden">
+      <div class="row">
+        <p style="color:#9aa3c7;font-size:15px">Aapke istemal ke numbers — kitni jobs, kitni downloads, kitna data.</p>
+        <button class="ghost" onclick="loadStats()">🔄 Refresh</button>
+      </div>
+      <div class="tiles" id="dashTiles"></div>
+      <h3 class="section">📁 Job Types</h3>
+      <div id="dashTypes"></div>
+      <h3 class="section">🌐 Top Sources</h3>
+      <div id="dashSources"></div>
+      <div class="status" id="dashStatus"></div>
     </div>
   </div>
 
   <div class="platforms">
     <span>Facebook</span><span>YouTube</span><span>TikTok</span><span>Instagram</span><span>X</span><span>+ 1000 more</span>
   </div>
-  <footer>Made for creators • Download responsibly</footer>
+  <footer>Made for creators • Download • Grab • Profiles • Clipper & Effects • Brand Overlay • Auto Clips • Subtitles • Upload • Dashboard — Download responsibly</footer>
 </div>
 
 <script>
@@ -278,6 +460,9 @@ function showMain(username) {
   document.getElementById('mainArea').classList.remove('hidden');
   document.getElementById('userBar').classList.remove('hidden');
   document.getElementById('meName').textContent = username;
+  window.CK_USER = username;
+  const ov = document.getElementById('ovText');
+  if (ov && !ov.value) ov.value = username;
   checkCookies(); checkCaptions(); loadJobs(); refreshClipFiles();
 }
 async function doAuth() {
@@ -309,10 +494,12 @@ async function checkSession() {
 /* ---------- TABS ---------- */
 function showTab(t, btn) {
   document.querySelectorAll('.tab[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
-  ['download','grab','clip','subs','upload','jobs'].forEach(x =>
+  ['download','grab','clip','subs','upload','jobs','profiles','dash'].forEach(x =>
     document.getElementById('tab-' + x).classList.toggle('hidden', x !== t));
   if (t === 'jobs') loadJobs();
   if (t === 'clip') refreshClipFiles();
+  if (t === 'profiles') loadProfiles();
+  if (t === 'dash') loadStats();
 }
 
 /* ---------- DOWNLOAD ---------- */
@@ -354,7 +541,8 @@ async function startDownload() {
   const bar = document.getElementById('dlProgress');
   bar.style.display = 'block'; bar.firstElementChild.style.width = '40%';
   try {
-    const r = await api('/api/download', jsonOpts({url, format_id, use_cookies: document.getElementById('dlUseCookies').checked}));
+    const secsVal = document.getElementById('dlSecs').value;
+    const r = await api('/api/download', jsonOpts({url, format_id, use_cookies: document.getElementById('dlUseCookies').checked, fmt: document.getElementById('dlFmt').value, secs: secsVal ? parseFloat(secsVal) : null}));
     bar.firstElementChild.style.width = '80%';
     if (!r.ok) { const d = await r.json().catch(()=>({})); throw new Error(d.error || 'Download fail ho gaya'); }
     const blob = await r.blob();
@@ -423,6 +611,15 @@ async function doGrab() {
 }
 function grabSelectAll(v) { document.querySelectorAll('.grab-check').forEach(c => c.checked = v); }
 
+function bulkSettings() {
+  const secsVal = document.getElementById('bulkSecs').value;
+  return {
+    fmt: document.getElementById('bulkFmt').value,
+    secs: secsVal ? parseFloat(secsVal) : null,
+    concurrency: parseInt(document.getElementById('bulkConc').value || '1', 10),
+    skip_dup: document.getElementById('bulkSkipDup').checked
+  };
+}
 async function startBulk() {
   const urls = [];
   document.querySelectorAll('.grab-check:checked').forEach(c => urls.push(grabEntries[+c.dataset.i].url));
@@ -430,7 +627,7 @@ async function startBulk() {
   const btn = document.getElementById('bulkBtn'); btn.disabled = true;
   setStatus('grabStatus', '⬇ Bulk download shuru ho gaya…', 'info');
   try {
-    const r = await api('/api/bulk-download', jsonOpts({urls, use_cookies: document.getElementById('grabUseCookies').checked}));
+    const r = await api('/api/bulk-download', jsonOpts(Object.assign({urls, use_cookies: document.getElementById('grabUseCookies').checked}, bulkSettings())));
     const d = await r.json();
     if (!d.ok) { setStatus('grabStatus', '❌ ' + d.error, 'err'); btn.disabled = false; return; }
     pollJob(d.job_id, btn);
@@ -448,7 +645,7 @@ async function startMultiBulk() {
   const btn = document.getElementById('multiBtn'); btn.disabled = true;
   setStatus('multiStatus', '⬇ ' + urls.length + ' links ka bulk download shuru ho gaya…', 'info');
   try {
-    const r = await api('/api/bulk-download', jsonOpts({urls, use_cookies: document.getElementById('multiUseCookies').checked}));
+    const r = await api('/api/bulk-download', jsonOpts(Object.assign({urls, use_cookies: document.getElementById('multiUseCookies').checked}, bulkSettings())));
     const d = await r.json();
     if (!d.ok) { setStatus('multiStatus', '❌ ' + d.error, 'err'); btn.disabled = false; return; }
     setStatus('multiStatus', '✅ Job shuru: ' + urls.length + ' videos — progress upar dikh raha hai.', 'ok');
@@ -465,7 +662,7 @@ function renderJobItems(el, job) {
     if (it.status === 'done' && it.download_url) right = '<span class="badge done">' + (it.quality || 'done') + '</span> <a href="' + it.download_url + '">⬇ Download</a>';
     if (it.status === 'error') right = '<span class="badge error">error</span>';
     div.innerHTML = '<span class="ji-title"></span>' + right;
-    div.querySelector('.ji-title').textContent = (it.title || it.url || 'Video') + (it.error ? ' — ' + it.error : '');
+    div.querySelector('.ji-title').textContent = (it.title || it.url || 'Video') + (it.note ? ' — ' + it.note : '') + (it.error ? ' — ' + it.error : '');
     el.appendChild(div);
   });
 }
@@ -516,18 +713,22 @@ async function refreshClipFiles() {
   try {
     const r = await fetch('/api/jobs');
     const d = await r.json();
-    const sel = document.getElementById('clipJobFile');
-    const cur = sel.value;
-    sel.innerHTML = '<option value="">(koi file nahi)</option>';
+    const opts = [];
     (d.jobs || []).forEach(j => (j.items || []).forEach(it => {
       if (it.status === 'done' && it.file) {
-        const o = document.createElement('option');
-        o.value = j.id + '|' + it.file;
-        o.textContent = (it.title || it.file) + (it.quality ? ' (' + it.quality + ')' : '');
-        sel.appendChild(o);
+        opts.push({ v: j.id + '|' + it.file, t: (it.title || it.file) + (it.quality ? ' (' + it.quality + ')' : '') });
       }
     }));
-    sel.value = cur;
+    document.querySelectorAll('select.jobfile-sel').forEach(sel => {
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">(koi file nahi)</option>';
+      opts.forEach(o => {
+        const el = document.createElement('option');
+        el.value = o.v; el.textContent = o.t;
+        sel.appendChild(el);
+      });
+      sel.value = cur;
+    });
   } catch(e) {}
 }
 async function doClip() {
@@ -583,6 +784,10 @@ async function doBurn() {
   const s = document.getElementById('burnSrt').files[0];
   if (!v || !s) { setStatus('burnStatus', 'Video aur .srt dono files select karo.', 'err'); return; }
   const fd = new FormData(); fd.append('video', v); fd.append('srt', s);
+  fd.append('color', document.getElementById('burnColor').value);
+  fd.append('outline', document.getElementById('burnOutline').value);
+  fd.append('position', document.getElementById('burnPos').value);
+  fd.append('fontsize', document.getElementById('burnSize').value);
   const btn = document.getElementById('burnBtn'); btn.disabled = true;
   setStatus('burnStatus', '🔥 Subtitles burn ho rahe hain…', 'info');
   try {
@@ -716,6 +921,222 @@ async function uploadToFB() {
   btn.disabled = false;
   setStatus('upStatus', '📤 Upload khatam: ' + okCount + ' / ' + checked.length + ' Pages par ho gaya. Har Page ka result upar diya hai.', okCount ? 'ok' : 'err');
   setTimeout(() => bar.style.display = 'none', 1500);
+}
+
+/* ---------- SHARED: source (upload ya job file) ---------- */
+function fillSource(fd, fileId, selId) {
+  const f = document.getElementById(fileId).files[0];
+  const sel = document.getElementById(selId).value;
+  if (f) { fd.append('video', f); return true; }
+  if (sel) { const p = sel.split('|'); fd.append('job_id', p[0]); fd.append('filename', p[1]); return true; }
+  return false;
+}
+function showJobResult(statusId, d, label) {
+  const el = document.getElementById(statusId);
+  el.className = 'status ok';
+  el.innerHTML = '';
+  const span = document.createElement('span');
+  span.textContent = '✅ ' + label + ' tayyar! ';
+  const a = document.createElement('a');
+  a.href = d.download_url; a.textContent = '⬇ Download';
+  a.style.color = '#6c8cff'; a.style.fontWeight = '600';
+  el.appendChild(span); el.appendChild(a);
+}
+async function postMediaJob(path, fd, statusId, btnId, label) {
+  const btn = document.getElementById(btnId); btn.disabled = true;
+  setStatus(statusId, '⏳ Kaam ho raha hai… bari video mein waqt lag sakta hai.', 'info');
+  try {
+    const r = await api(path, { method: 'POST', body: fd });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) throw new Error(d.error || 'Kaam fail ho gaya');
+    showJobResult(statusId, d, label);
+    loadJobs(); refreshClipFiles();
+    return d;
+  } catch(e) { setStatus(statusId, '❌ ' + e.message, 'err'); return null; }
+  finally { btn.disabled = false; }
+}
+
+/* ---------- EFFECTS ---------- */
+async function doEffects() {
+  const fd = new FormData();
+  if (!fillSource(fd, 'fxFile', 'fxJobFile')) { setStatus('fxStatus', 'Video file upload karo ya downloaded file select karo.', 'err'); return; }
+  fd.append('brightness', document.getElementById('fxBright').value);
+  fd.append('contrast', document.getElementById('fxContrast').value);
+  fd.append('saturation', document.getElementById('fxSat').value);
+  fd.append('flip', document.getElementById('fxFlip').value);
+  fd.append('rotate', document.getElementById('fxRotate').value);
+  fd.append('crop_on', document.getElementById('fxCropOn').checked ? '1' : '');
+  fd.append('crop_pct', document.getElementById('fxCropPct').value);
+  await postMediaJob('/api/effects', fd, 'fxStatus', 'fxBtn', 'Effects wali video');
+}
+
+/* ---------- BRAND OVERLAY ---------- */
+async function doOverlay() {
+  const fd = new FormData();
+  if (!fillSource(fd, 'ovFile', 'ovJobFile')) { setStatus('ovStatus', 'Video file upload karo ya downloaded file select karo.', 'err'); return; }
+  fd.append('text', document.getElementById('ovText').value);
+  fd.append('text_pos', document.getElementById('ovPos').value);
+  fd.append('text_size', document.getElementById('ovSize').value);
+  fd.append('text_opacity', document.getElementById('ovOpacity').value);
+  const logo = document.getElementById('ovLogo').files[0];
+  if (logo) fd.append('logo', logo);
+  fd.append('logo_pos', document.getElementById('ovLogoPos').value);
+  fd.append('logo_scale', document.getElementById('ovLogoScale').value);
+  fd.append('logo_opacity', document.getElementById('ovLogoOpacity').value);
+  await postMediaJob('/api/overlay', fd, 'ovStatus', 'ovBtn', 'Brand wali video');
+}
+
+/* ---------- AUTO CLIPS ---------- */
+async function doAutoclips() {
+  const fd = new FormData();
+  if (!fillSource(fd, 'acFile', 'acJobFile')) { setStatus('acStatus', 'Video file upload karo ya downloaded file select karo.', 'err'); return; }
+  fd.append('count', document.getElementById('acCount').value);
+  fd.append('duration', document.getElementById('acDur').value);
+  fd.append('ratio', document.getElementById('acRatio').value);
+  fd.append('wm_on', document.getElementById('acWmOn').checked ? '1' : '');
+  fd.append('wm_text', document.getElementById('acWmText').value);
+  fd.append('delete_original', document.getElementById('acDelOrig').checked ? '1' : '');
+  const btn = document.getElementById('acBtn'); btn.disabled = true;
+  setStatus('acStatus', '🎬 Clips ban rahe hain…', 'info');
+  document.getElementById('acResults').innerHTML = '';
+  try {
+    const r = await api('/api/autoclips', { method: 'POST', body: fd });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) throw new Error(d.error || 'Clips fail ho gaye');
+    const box = document.getElementById('acResults');
+    (d.created || []).forEach(c => {
+      const div = document.createElement('div');
+      div.className = 'job-item';
+      div.innerHTML = '<span class="ac-title"></span><a>⬇ Download</a>';
+      div.querySelector('.ac-title').textContent = c.title;
+      div.querySelector('a').href = c.download_url;
+      box.appendChild(div);
+    });
+    setStatus('acStatus', '✅ ' + d.created.length + ' clips ban gaye!' + ((d.errors || []).length ? ' Kuch fail hue: ' + d.errors.length : '') + (d.deleted_original ? ' Original file delete ho gayi.' : ''), 'ok');
+    loadJobs(); refreshClipFiles();
+  } catch(e) { setStatus('acStatus', '❌ ' + e.message, 'err'); }
+  btn.disabled = false;
+}
+
+/* ---------- PROFILES ---------- */
+async function loadProfiles() {
+  try {
+    const r = await fetch('/api/profiles');
+    const d = await r.json();
+    const box = document.getElementById('pfList');
+    box.innerHTML = '';
+    if (!d.ok || !d.profiles.length) {
+      box.innerHTML = '<p style="color:#9aa3c7;font-size:14px;margin-top:8px">Abhi koi profile nahi. Upar form se pehla profile save karo.</p>';
+      return;
+    }
+    d.profiles.forEach(p => {
+      const div = document.createElement('div');
+      div.className = 'job-item';
+      const flags = [p.captions_on ? '💬 captions' : '', p.brand_on ? '🏷️ brand' : '', p.clips_on ? '🎬 clips×' + p.clip_count : ''].filter(Boolean).join(' • ');
+      div.innerHTML = '<span><b class="pf-name"></b> <span class="badge"></span><br><span class="pf-url" style="color:#9aa3c7;font-size:12.5px"></span>' + (flags ? '<br><span style="color:#9aa3c7;font-size:12.5px">' + flags + '</span>' : '') + '</span>' +
+        '<span><button class="ghost">🔗 Grab</button> <button class="ghost">🗑 Delete</button></span>';
+      div.querySelector('.pf-name').textContent = p.name;
+      div.querySelector('.badge').textContent = p.platform;
+      div.querySelector('.pf-url').textContent = p.url;
+      const buttons = div.querySelectorAll('button');
+      buttons[0].onclick = () => grabProfile(p.url);
+      buttons[1].onclick = () => delProfile(p.id);
+      box.appendChild(div);
+    });
+  } catch(e) {}
+}
+function grabProfile(url) {
+  document.getElementById('grabUrl').value = url;
+  showTab('grab', document.querySelector('.tab[data-tab="grab"]'));
+  doGrab();
+}
+async function addProfile() {
+  const body = {
+    name: document.getElementById('pfName').value.trim(),
+    platform: document.getElementById('pfPlatform').value,
+    url: document.getElementById('pfUrl').value.trim(),
+    captions_on: document.getElementById('pfCaptions').checked,
+    brand_on: document.getElementById('pfBrand').checked,
+    brand_text: document.getElementById('pfBrandText').value.trim(),
+    clips_on: document.getElementById('pfClips').checked,
+    clip_count: parseInt(document.getElementById('pfClipCount').value || '0', 10)
+  };
+  const btn = document.getElementById('pfBtn'); btn.disabled = true;
+  try {
+    const r = await api('/api/profiles', jsonOpts(body));
+    const d = await r.json();
+    if (!d.ok) { setStatus('pfStatus', '❌ ' + d.error, 'err'); return; }
+    setStatus('pfStatus', '✅ Profile save ho gaya: ' + d.profile.name, 'ok');
+    loadProfiles();
+  } catch(e) { setStatus('pfStatus', '❌ Server se rabta nahi ho saka.', 'err'); }
+  btn.disabled = false;
+}
+async function delProfile(id) {
+  try {
+    const r = await api('/api/profiles/delete', jsonOpts({id}));
+    const d = await r.json();
+    if (!d.ok) { setStatus('pfStatus', '❌ ' + d.error, 'err'); return; }
+    setStatus('pfStatus', '🗑 Profile delete ho gaya.', 'ok');
+    loadProfiles();
+  } catch(e) { setStatus('pfStatus', '❌ Server se rabta nahi ho saka.', 'err'); }
+}
+async function importProfiles() {
+  const f = document.getElementById('pfCsv').files[0];
+  if (!f) { setStatus('pfStatus', 'Pehle CSV file select karo.', 'err'); return; }
+  const fd = new FormData(); fd.append('csv', f);
+  try {
+    const r = await api('/api/profiles/import', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (!d.ok) { setStatus('pfStatus', '❌ ' + d.error, 'err'); return; }
+    setStatus('pfStatus', '✅ Import ho gaya: ' + d.added + ' profiles add hue' + (d.skipped ? ', ' + d.skipped + ' skip hue (naam/URL ghalat)' : '') + '.', 'ok');
+    loadProfiles();
+  } catch(e) { setStatus('pfStatus', '❌ Server se rabta nahi ho saka.', 'err'); }
+}
+function exportProfiles() {
+  const a = document.createElement('a');
+  a.href = '/api/profiles/export';
+  a.download = 'clipkaro-profiles.csv';
+  a.click();
+}
+
+/* ---------- DASHBOARD ---------- */
+function barRow(container, label, val, max) {
+  const div = document.createElement('div');
+  div.className = 'bar-row';
+  const pct = max > 0 ? Math.round(val * 100 / max) : 0;
+  div.innerHTML = '<span class="bl"></span><div class="bar-track"><div class="bar-fill" style="width:' + pct + '%"></div></div><span class="bc">' + val + '</span>';
+  div.querySelector('.bl').textContent = label;
+  container.appendChild(div);
+}
+async function loadStats() {
+  try {
+    const r = await fetch('/api/stats');
+    const d = await r.json();
+    if (!d.ok) return;
+    const tiles = document.getElementById('dashTiles');
+    tiles.innerHTML = '';
+    [['🧾 Total Jobs', d.total_jobs], ['⬇ Downloads', d.downloads], ['💾 Data Downloaded', d.downloaded_human], ['❌ Failed Items', d.failed]].forEach(t => {
+      const div = document.createElement('div');
+      div.className = 'tile';
+      div.innerHTML = '<div class="num"></div><div class="lbl"></div>';
+      div.querySelector('.num').textContent = t[1];
+      div.querySelector('.lbl').textContent = t[0];
+      tiles.appendChild(div);
+    });
+    const types = document.getElementById('dashTypes');
+    types.innerHTML = '';
+    const typeEntries = Object.entries(d.by_type || {});
+    if (!typeEntries.length) types.innerHTML = '<p style="color:#9aa3c7;font-size:14px">Abhi koi job nahi.</p>';
+    const tMax = Math.max(1, ...typeEntries.map(e => e[1]));
+    typeEntries.sort((a, b) => b[1] - a[1]).forEach(e => barRow(types, e[0], e[1], tMax));
+    const srcs = document.getElementById('dashSources');
+    srcs.innerHTML = '';
+    const list = d.top_sources || [];
+    if (!list.length) srcs.innerHTML = '<p style="color:#9aa3c7;font-size:14px">Abhi koi download source nahi.</p>';
+    const sMax = Math.max(1, ...list.map(s => s.count));
+    list.forEach(s => barRow(srcs, s.source, s.count, sMax));
+    setStatus('dashStatus', '', '');
+  } catch(e) { setStatus('dashStatus', '❌ Stats load nahi ho sake.', 'err'); }
 }
 
 checkSession();
